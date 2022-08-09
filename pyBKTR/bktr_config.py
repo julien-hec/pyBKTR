@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+
 import torch
 
 from pyBKTR.sampler_config import KernelSamplerConfig
@@ -27,18 +28,18 @@ class BKTRConfig:
     """Smoothness factor used in Matern kernel (Choice in 1, 3 or 5 -- 3 for Matern 3/2)"""
     kernel_variance: float = 1
     """Variance used for all kernels (Paper -- :math:`\\sigma^2_s, \\sigma^2_t`)"""
-    sigma_r: float = 1E-2
+    sigma_r: float = 1e-2
     """Variance of the white noise process TODO (Paper -- :math:`\\tau^{-1}`)"""
-    a_0: float = 1E-6
+    a_0: float = 1e-6
     """Initial value for the shape (:math:`\\alpha`) in the gamma function generating tau"""
-    b_0: float = 1E-6
+    b_0: float = 1e-6
     """Initial value for the rate (:math:`\\beta`) in the gamma function generating tau"""
 
     period_slice_sampling_scale: float = log(10)
     """Slice sampling scale of the periodic length scale"""
-    period_min_hparam_val: float = log(1E-3)
+    period_min_hparam_val: float = log(1e-3)
     """Minimum value for periodic length scale hyperparameter"""
-    period_max_hparam_val: float = log(1E3)
+    period_max_hparam_val: float = log(1e3)
     """Maximum value for periodic length scale hyperparameter"""
     period_hparam_mu_prior: float = 0
     """Initial value for periodic length scale mean"""
@@ -47,9 +48,9 @@ class BKTRConfig:
 
     decay_slice_sampling_scale: float = log(10)
     """Slice sampling scale of the decay time scale"""
-    decay_min_hparam_val: float = log(1E-3)
+    decay_min_hparam_val: float = log(1e-3)
     """Minimum value for decay time scale hyperparameter"""
-    decay_max_hparam_val: float = log(1E3)
+    decay_max_hparam_val: float = log(1e3)
     """Maximum value for decay time scale hyperparameter"""
     decay_hparam_mu_prior: float = 0
     """Initial value for decay time scale mean"""
@@ -58,9 +59,9 @@ class BKTRConfig:
 
     spatial_slice_sampling_scale: float = log(10)
     """Slice sampling scale of the spatial length scale"""
-    spatial_min_hparam_val: float = log(1E-3)
+    spatial_min_hparam_val: float = log(1e-3)
     """Minimum value for spatial length scale hyperparameter"""
-    spatial_max_hparam_val: float = log(1E3)
+    spatial_max_hparam_val: float = log(1e3)
     """Maximum value for spatial length scale hyperparameter"""
     spatial_hparam_mu_prior: float = 0
     """Initial value for spatial length scale mean"""
@@ -86,7 +87,7 @@ class BKTRConfig:
             self.period_min_hparam_val,
             self.period_max_hparam_val,
             self.period_hparam_mu_prior,
-            self.period_hparam_precision_prior
+            self.period_hparam_precision_prior,
         )
 
         self.decay_scale_config = KernelSamplerConfig(
@@ -94,7 +95,7 @@ class BKTRConfig:
             self.decay_min_hparam_val,
             self.decay_max_hparam_val,
             self.decay_hparam_mu_prior,
-            self.decay_hparam_precision_prior
+            self.decay_hparam_precision_prior,
         )
 
         self.spatial_length_config = KernelSamplerConfig(
@@ -102,5 +103,5 @@ class BKTRConfig:
             self.spatial_min_hparam_val,
             self.spatial_max_hparam_val,
             self.spatial_hparam_mu_prior,
-            self.spatial_hparam_precision_prior
+            self.spatial_hparam_precision_prior,
         )

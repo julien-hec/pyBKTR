@@ -1,12 +1,17 @@
 from typing import Union
-import torch
+
 import numpy as np
+import torch
+
 from pyBKTR.bktr_config import BKTRConfig
-from pyBKTR.kernel_factories import KernelFactory, TemporalKernelFactory, SpatialKernelFactory
+from pyBKTR.kernel_factories import KernelFactory, SpatialKernelFactory, TemporalKernelFactory
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.samplers import (
-    KernelParamSampler, TauSampler, PrecisionMatrixSampler,
-    get_cov_decomp_chol, sample_norm_multivariate
+    KernelParamSampler,
+    PrecisionMatrixSampler,
+    TauSampler,
+    get_cov_decomp_chol,
+    sample_norm_multivariate,
 )
 
 
@@ -16,15 +21,34 @@ class BKTRRegressor:
     A BKTRRegressor holds all the key elements to accomplish the MCMC sampling
     algorithm (**Algorithm 1** of the paper).
     """
+
     __slots__ = [
-        'config', 'spatial_distance_tensor', 'y', 'omega', 'covariates',
-        'covariates_dim', 'logged_params_tensor', 'tau', 'spatial_decomp',
-        'temporal_decomp', 'covs_decomp', 'y_estimate', 'total_sq_error',
-        'mae', 'rmse', 'temporal_kernel_factory', 'spatial_kernel_factory',
-        'spatial_length_sampler', 'decay_scale_sampler', 'periodic_length_sampler',
-        'tau_sampler', 'precision_matrix_sampler',
-        'spatial_ll_evaluator', 'temporal_ll_evaluator',
-        'avg_y_est', 'sum_beta_est'
+        'config',
+        'spatial_distance_tensor',
+        'y',
+        'omega',
+        'covariates',
+        'covariates_dim',
+        'logged_params_tensor',
+        'tau',
+        'spatial_decomp',
+        'temporal_decomp',
+        'covs_decomp',
+        'y_estimate',
+        'total_sq_error',
+        'mae',
+        'rmse',
+        'temporal_kernel_factory',
+        'spatial_kernel_factory',
+        'spatial_length_sampler',
+        'decay_scale_sampler',
+        'periodic_length_sampler',
+        'tau_sampler',
+        'precision_matrix_sampler',
+        'spatial_ll_evaluator',
+        'temporal_ll_evaluator',
+        'avg_y_est',
+        'sum_beta_est',
     ]
     config: BKTRConfig
     spatial_distance_tensor: torch.Tensor
@@ -88,8 +112,7 @@ class BKTRRegressor:
         self.omega = torch.tensor(omega)
         self.tau = 1 / torch.tensor(self.config.sigma_r)
         self._reshape_covariates(
-            torch.tensor(spatial_covariate_matrix),
-            torch.tensor(temporal_covariate_matrix)
+            torch.tensor(spatial_covariate_matrix), torch.tensor(temporal_covariate_matrix)
         )
         self._initialize_params()
 
@@ -123,9 +146,7 @@ class BKTRRegressor:
         return self._calculate_avg_estimates()
 
     def _reshape_covariates(
-        self,
-        spatial_covariate_tensor: torch.Tensor,
-        temporal_covariate_tensor: torch.Tensor
+        self, spatial_covariate_tensor: torch.Tensor, temporal_covariate_tensor: torch.Tensor
     ):
         """Reshape the covariate tensors into one single tensor and set it as a property
 
@@ -140,7 +161,7 @@ class BKTRRegressor:
             'nb_times': nb_times,  # T
             'nb_spatial_covariates': nb_spatial_covariates,
             'nb_temporal_covariates': nb_temporal_covariates,
-            'nb_covariates': 1 + nb_spatial_covariates + nb_temporal_covariates  # P
+            'nb_covariates': 1 + nb_spatial_covariates + nb_temporal_covariates,  # P
         }
 
         intersect_covs = torch.ones([nb_spaces, nb_times, 1])
@@ -154,8 +175,7 @@ class BKTRRegressor:
         self.covariates = torch.dstack([intersect_covs, spatial_covs, time_covs])
 
     def _init_covariate_decomp(self):
-        """Initialize the CP decomposed covariate tensors with normally distributed random values
-        """
+        """Initialize CP decomposed covariate tensors with normally distributed random values"""
         rank_decomp = self.config.rank_decomp
         covs_dim = self.covariates_dim
 
@@ -171,9 +191,7 @@ class BKTRRegressor:
 
     @staticmethod
     def _calculate_error_metrics(
-        y_estimate: torch.Tensor,
-        y: torch.Tensor,
-        omega: torch.Tensor
+        y_estimate: torch.Tensor, y: torch.Tensor, omega: torch.Tensor
     ) -> dict[str, float]:
         """Calculate error metrics of interest (MAE, RMSE, Total Error)
 
@@ -200,13 +218,9 @@ class BKTRRegressor:
         """
         # Calculate Coefficient Estimation
         coefficient_estimate = torch.einsum(
-            'im,jm,km->ijk',
-            [self.spatial_decomp, self.temporal_decomp, self.covs_decomp]
+            'im,jm,km->ijk', [self.spatial_decomp, self.temporal_decomp, self.covs_decomp]
         )
-        self.y_estimate = torch.einsum(
-            'ijk,ijk->ij',
-            self.covariates, coefficient_estimate
-        )
+        self.y_estimate = torch.einsum('ijk,ijk->ij', self.covariates, coefficient_estimate)
 
         # Iteration errors
         err_metrics = self._calculate_error_metrics(self.y_estimate, self.y, self.omega)
@@ -219,8 +233,7 @@ class BKTRRegressor:
         else:
             lbound_indx = max(0, iter - burn_in_iter)
             sum_y_est = (
-                self.logged_params_tensor['y_estimate'][lbound_indx:].sum(0)
-                + self.y_estimate
+                self.logged_params_tensor['y_estimate'][lbound_indx:].sum(0) + self.y_estimate
             )
             avg_y_est = sum_y_est / (iter - lbound_indx)
         avg_err_metrics = self._calculate_error_metrics(avg_y_est, self.y, self.omega)
@@ -250,32 +263,38 @@ class BKTRRegressor:
         }
 
     def _create_kernel_factories(self):
-        """Create and set the kernel factories for the spatial and temporal kernels
-        """
+        """Create and set the kernel factories for the spatial and temporal kernels"""
         self.spatial_kernel_factory = SpatialKernelFactory(
             self.spatial_distance_tensor,
             self.config.spatial_smoothness_factor,
-            self.config.kernel_variance
+            self.config.kernel_variance,
         )
         self.temporal_kernel_factory = TemporalKernelFactory(
             'periodic_se',
             self.covariates_dim['nb_times'],
             self.config.temporal_period_length,
-            self.config.kernel_variance
+            self.config.kernel_variance,
         )
 
     def _create_likelihood_evaluators(self):
-        """Create and set the evaluators for the spatial and the temporal likelihoods
-        """
+        """Create and set the evaluators for the spatial and the temporal likelihoods"""
         rank_decomp = self.config.rank_decomp
 
         self.spatial_ll_evaluator = MarginalLikelihoodEvaluator(
-            rank_decomp, self.covariates_dim['nb_covariates'], self.covariates,
-            self.omega, self.y, is_transposed=False
+            rank_decomp,
+            self.covariates_dim['nb_covariates'],
+            self.covariates,
+            self.omega,
+            self.y,
+            is_transposed=False,
         )
         self.temporal_ll_evaluator = MarginalLikelihoodEvaluator(
-            rank_decomp, self.covariates_dim['nb_covariates'], self.covariates,
-            self.omega, self.y, is_transposed=True
+            rank_decomp,
+            self.covariates_dim['nb_covariates'],
+            self.covariates,
+            self.omega,
+            self.y,
+            is_transposed=True,
         )
 
     def _create_hparam_samplers(self):
@@ -289,24 +308,22 @@ class BKTRRegressor:
             config=self.config.spatial_length_config,
             kernel_factory=self.spatial_kernel_factory,
             marginal_ll_eval_fn=self._calc_spatial_marginal_ll,
-            kernel_hparam_name='spatial_length_scale'
+            kernel_hparam_name='spatial_length_scale',
         )
         self.decay_scale_sampler = KernelParamSampler(
             config=self.config.decay_scale_config,
             kernel_factory=self.temporal_kernel_factory,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
-            kernel_hparam_name='decay_time_scale'
+            kernel_hparam_name='decay_time_scale',
         )
         self.periodic_length_sampler = KernelParamSampler(
             config=self.config.periodic_scale_config,
             kernel_factory=self.temporal_kernel_factory,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
-            kernel_hparam_name='periodic_length_scale'
+            kernel_hparam_name='periodic_length_scale',
         )
 
-        self.tau_sampler = TauSampler(
-            self.config.a_0, self.config.b_0, self.omega.sum()
-        )
+        self.tau_sampler = TauSampler(self.config.a_0, self.config.b_0, self.omega.sum())
 
         self.precision_matrix_sampler = PrecisionMatrixSampler(
             self.covariates_dim['nb_covariates'], self.config.rank_decomp
@@ -315,10 +332,7 @@ class BKTRRegressor:
     def _calc_spatial_marginal_ll(self):
         """Calculate the spatial marginal likelihood"""
         return self.spatial_ll_evaluator.calc_likelihood(
-            self.spatial_kernel_factory.kernel,
-            self.temporal_decomp,
-            self.covs_decomp,
-            self.tau
+            self.spatial_kernel_factory.kernel, self.temporal_decomp, self.covs_decomp, self.tau
         )
 
     def _calc_temporal_marginal_ll(self):
@@ -338,10 +352,7 @@ class BKTRRegressor:
         self.precision_matrix_sampler.sample(self.covs_decomp)
 
     def _sample_decomp_norm(
-        self,
-        initial_decomp: torch.Tensor,
-        chol_l: torch.Tensor,
-        uu: torch.Tensor
+        self, initial_decomp: torch.Tensor, chol_l: torch.Tensor, uu: torch.Tensor
     ):
         """Sample a new covariate decomposition from a mulivariate normal distribution
 
@@ -367,9 +378,14 @@ class BKTRRegressor:
     def _sample_covariate_decomp(self):
         """Sample a new covariate decomposition"""
         chol_res = get_cov_decomp_chol(
-            self.spatial_decomp, self.temporal_decomp, self.covariates,
-            self.config.rank_decomp, self.omega, self.tau, self.y,
-            self.precision_matrix_sampler.wish_precision_tensor
+            self.spatial_decomp,
+            self.temporal_decomp,
+            self.covariates,
+            self.config.rank_decomp,
+            self.omega,
+            self.tau,
+            self.y,
+            self.precision_matrix_sampler.wish_precision_tensor,
         )
         self.covs_decomp = self._sample_decomp_norm(
             self.covs_decomp, chol_res['chol_lc'], chol_res['cc']
@@ -402,7 +418,7 @@ class BKTRRegressor:
             'rmse': self.rmse,
             'spatial_length': self.spatial_length_sampler.theta_value,
             'decay_scale': self.decay_scale_sampler.theta_value,
-            'periodic_length': self.periodic_length_sampler.theta_value
+            'periodic_length': self.periodic_length_sampler.theta_value,
         }
 
     def _collect_iter_samples(self, iter):
@@ -412,7 +428,7 @@ class BKTRRegressor:
             self.logged_params_tensor[k][iter - 1] = v
 
     def _calculate_avg_estimates(self) -> dict[str, Union[float, torch.Tensor]]:
-        """ Calculate the final dictionary of values returned by the MCMC sampling
+        """Calculate the final dictionary of values returned by the MCMC sampling
 
         The final values include the y estimation, the average estimated betas and the errors
 
@@ -423,12 +439,11 @@ class BKTRRegressor:
             'y_est': self.avg_y_est,
             'beta_est': self.sum_beta_est / (self.config.max_iter - self.config.burn_in_iter + 1),
             'mae': self.mae,
-            'rmse': self.rmse
+            'rmse': self.rmse,
         }
 
     def _initialize_params(self):
-        """Initialize all parameters that are needed before we start the MCMC sampling
-        """
+        """Initialize all parameters that are needed before we start the MCMC sampling"""
         self._init_covariate_decomp()
         self._set_y_estimate_and_errors(0)
         self._create_kernel_factories()

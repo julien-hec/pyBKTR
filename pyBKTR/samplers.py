@@ -18,9 +18,13 @@ class KernelParamSampler:
     """
 
     __slots__ = (
-        'config', 'kernel_factory', 'marginal_ll_eval_fn',
-        'kernel_hparam_name', 'theta_value',
-        '_theta_min', '_theta_max'
+        'config',
+        'kernel_factory',
+        'marginal_ll_eval_fn',
+        'kernel_hparam_name',
+        'theta_value',
+        '_theta_min',
+        '_theta_max',
     )
 
     config: KernelSamplerConfig
@@ -59,20 +63,16 @@ class KernelParamSampler:
         setattr(self.kernel_factory, self.kernel_hparam_name, np.exp(theta))
 
     def initialize_theta_bounds(self):
-        """ Initialize sampling bounds according to current theta value and sampling scale """
+        """Initialize sampling bounds according to current theta value and sampling scale"""
         theta_range = self.config.slice_sampling_scale * random.random()
         self._theta_min = max(self.theta_value - theta_range, self.config.min_hyper_value)
         self._theta_max = min(
-            self._theta_min + self.config.slice_sampling_scale,
-            self.config.max_hyper_value
+            self._theta_min + self.config.slice_sampling_scale, self.config.max_hyper_value
         )
 
     def _prior_fn(self, theta: float) -> float:
         """Prior likelihood function for a given hyperparameter value"""
-        return (
-            -0.5 * self.config.hyper_precision_prior
-            * (theta - self.config.hyper_mu_prior) ** 2
-        )
+        return -0.5 * self.config.hyper_precision_prior * (theta - self.config.hyper_mu_prior) ** 2
 
     def sample_rand_theta_value(self):
         """Sample a random theta value within the sampling bounds"""
@@ -94,9 +94,9 @@ class KernelParamSampler:
             new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(new_theta)
 
             marg_ll_diff = new_marginal_likelihood - initial_marginal_likelihood
-            if (np.exp(np.clip(marg_ll_diff, -709.78, 709.78)) > density_threshold):
+            if np.exp(np.clip(marg_ll_diff, -709.78, 709.78)) > density_threshold:
                 return np.exp(new_theta)
-            if (new_theta < initial_theta):
+            if new_theta < initial_theta:
                 self._theta_min = new_theta
             else:
                 self._theta_max = new_theta
@@ -127,7 +127,7 @@ def get_cov_decomp_chol(
     omega: torch.Tensor,
     tau: float,
     y: torch.Tensor,
-    wish_precision_tensor: torch.Tensor
+    wish_precision_tensor: torch.Tensor,
 ):
     y_masked = omega * y
     # TODO Merge some parts with marginal ll of spatial and temporal
@@ -149,6 +149,7 @@ def get_cov_decomp_chol(
 
 class TauSampler:
     """Sampler class for the Tau precision parameter of the BKTR Algorithm"""
+
     b_0: float
     a_tau: float
 
@@ -163,6 +164,7 @@ class TauSampler:
 
 class PrecisionMatrixSampler:
     """Sample class to get new precision matrices from Wishart distributions"""
+
     nb_covariates: int
     wish_df: int
     wish_precision_tensor: torch.Tensor
@@ -178,4 +180,4 @@ class PrecisionMatrixSampler:
             df=self.wish_df, covariance_matrix=wish_sigma
         ).sample()
         self.wish_precision_tensor = wish_precision_matrix
-        return(self.wish_precision_tensor)
+        return self.wish_precision_tensor

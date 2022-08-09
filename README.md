@@ -12,3 +12,21 @@ then
 ```bash
 make html
 ```
+
+### Dev environment setup
+If you wish to contribute to this project, we strongly recommend you to use the precommit setup created in the project. To get started, simply follow these instructions.
+
+First, install the project locally with the development resources. If you use zsh, you might need to put single quotes around the path `'.[dev]'`
+```bash
+pip install .[dev]
+```
+
+Then, install the git hook scripts.
+```bash
+pre-commit install
+```
+
+Finally, everything should work fine if when run the pre-commit hooks.
+```bash
+pre-commit run --all-files
+```

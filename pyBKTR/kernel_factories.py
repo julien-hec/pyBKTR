@@ -1,7 +1,8 @@
 import abc
 import math
-import torch
 from typing import Callable
+
+import torch
 
 
 class KernelFactory(abc.ABC):
@@ -21,9 +22,15 @@ class TemporalKernelFactory:
     A temporal kernel can use a periodic kernel function, a squared exponential (SE)
     kernel function or a mixture of both.
     """
+
     __slots__ = (
-        'time_distances', 'period_length', 'kernel', 'kernel_variance',
-        'periodic_length_scale', 'decay_time_scale', '_core_kernel_fn'
+        'time_distances',
+        'period_length',
+        'kernel',
+        'kernel_variance',
+        'periodic_length_scale',
+        'decay_time_scale',
+        '_core_kernel_fn',
     )
 
     time_distances: torch.Tensor
@@ -93,17 +100,16 @@ class TemporalKernelFactory:
         Core kernel function for a periodic kernel
         """
         return torch.exp(
-            -2 * torch.sin(torch.pi * self.time_distances / self.period_length) ** 2
-            / self.periodic_length_scale ** 2
+            -2
+            * torch.sin(torch.pi * self.time_distances / self.period_length) ** 2
+            / self.periodic_length_scale**2
         )
 
     def _se_kernel_gen(self) -> Callable:
         """
         Core kernel function for a Squared Exponential (SE) kernel
         """
-        return torch.exp(
-            - self.time_distances ** 2 / (2 * self.decay_time_scale ** 2)
-        )
+        return torch.exp(-self.time_distances**2 / (2 * self.decay_time_scale**2))
 
     def _periodic_se_kernel_gen(self) -> Callable:
         """
@@ -129,9 +135,13 @@ class SpatialKernelFactory(KernelFactory):
     A SpatialKernelGenerator can create spatial kernels according
     to provided parameters.
     """
+
     __slots__ = (
-        'smoothness_factor', 'kernel_variance', 'kernel',
-        '_core_kernel_fn', 'spatial_length_scale',
+        'smoothness_factor',
+        'kernel_variance',
+        'kernel',
+        '_core_kernel_fn',
+        'spatial_length_scale',
     )
 
     distance_matrix: torch.Tensor
@@ -172,9 +182,9 @@ class SpatialKernelFactory(KernelFactory):
         """
         match smoothness_factor:
             case 1:
-                return lambda t:  1
+                return lambda t: 1
             case 3:
-                return lambda t:  1 + t
+                return lambda t: 1 + t
             case 5:
                 return lambda t: 1 + t * (1 + t / 3)
             case _:

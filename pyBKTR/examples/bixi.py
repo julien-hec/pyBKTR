@@ -1,8 +1,9 @@
+import numpy as np
+from pkg_resources import resource_stream
+
 from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.bktr_config import BKTRConfig
 from pyBKTR.utils import load_numpy_array_from_csv, log
-import numpy as np
-from pkg_resources import resource_stream
 
 
 def run_bixi_bktr(
@@ -10,7 +11,7 @@ def run_bixi_bktr(
     run_id_from: int = 1,
     run_id_to: int = 1,
     burn_in_iter: int = 100,
-    max_iter: int = 200
+    max_iter: int = 200,
 ) -> None:
 
     for r_id in range(run_id_from, run_id_to + 1):
@@ -19,7 +20,7 @@ def run_bixi_bktr(
             max_iter=max_iter,
             burn_in_iter=burn_in_iter,
             decay_max_hparam_val=log(2),
-            period_max_hparam_val=log(2)
+            period_max_hparam_val=log(2),
         )
 
         def get_source_file_name(csv_name: str) -> str:
@@ -27,9 +28,11 @@ def run_bixi_bktr(
 
         date_columns = ['day', 'month', 'weekday']
         departure_matrix = load_numpy_array_from_csv(
-            get_source_file_name('bike_station_departures'), columns_to_drop=date_columns,
-            rows_to_keep=list(range(1, 197)), fill_na_with_zeros=True,
-            transpose_matrix=True
+            get_source_file_name('bike_station_departures'),
+            columns_to_drop=date_columns,
+            rows_to_keep=list(range(1, 197)),
+            fill_na_with_zeros=True,
+            transpose_matrix=True,
         )
 
         # TODO Check those additionnal data manipulations
@@ -41,14 +44,19 @@ def run_bixi_bktr(
         bixi_omega = departure_matrix > 0
 
         bixi_weather_matrix = load_numpy_array_from_csv(
-            get_source_file_name('montreal_weather_data'), columns_to_drop=date_columns,
-            rows_to_keep=list(range(1, 197)), fill_na_with_zeros=True,
-            min_max_normalization=True
+            get_source_file_name('montreal_weather_data'),
+            columns_to_drop=date_columns,
+            rows_to_keep=list(range(1, 197)),
+            fill_na_with_zeros=True,
+            min_max_normalization=True,
         )
 
         bixi_station_matrix = load_numpy_array_from_csv(
-            get_source_file_name('bike_station_features'), columns_to_keep=list(range(8, 21)),
-            fill_na_with_zeros=True, transpose_matrix=False, min_max_normalization=True
+            get_source_file_name('bike_station_features'),
+            columns_to_keep=list(range(8, 21)),
+            fill_na_with_zeros=True,
+            transpose_matrix=False,
+            min_max_normalization=True,
         )
 
         bixi_distance_matrix = load_numpy_array_from_csv(
@@ -61,7 +69,7 @@ def run_bixi_bktr(
             spatial_covariate_matrix=bixi_station_matrix,
             spatial_distance_matrix=bixi_distance_matrix,
             y=bixi_y,
-            omega=bixi_omega
+            omega=bixi_omega,
         )
 
         # import cProfile
@@ -72,11 +80,9 @@ def run_bixi_bktr(
             csv_path = f'{rel_output_path}/py_bktr_{met_name}_{run_id}.csv'
             np.savetxt(csv_path, np_arr, delimiter=',')
 
-        for met_name in ["mae", "rmse", "spatial_length", "decay_scale", "periodic_length", "tau"]:
+        for met_name in ['mae', 'rmse', 'spatial_length', 'decay_scale', 'periodic_length', 'tau']:
             write_np_array_to_csv(
-                met_name,
-                np.array(bktr_regressor.logged_params_tensor[met_name].cpu()),
-                r_id
+                met_name, np.array(bktr_regressor.logged_params_tensor[met_name].cpu()), r_id
             )
-        for met_name in ["y_est", "beta_est"]:
+        for met_name in ['y_est', 'beta_est']:
             write_np_array_to_csv(met_name, np.array(bktr_result[met_name].cpu().flatten()), r_id)

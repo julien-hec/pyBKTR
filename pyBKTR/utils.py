@@ -6,6 +6,7 @@ import pandas as pd
 
 class log(float):
     """Log wrapper for math.log to get better documentation"""
+
     def __new__(cls, log_val, *args, **kwargs):
         return super(log, cls).__new__(cls, math.log(log_val))
 
@@ -38,7 +39,7 @@ def load_numpy_array_from_csv(
     rows_to_keep: list[int] = None,
     fill_na_with_zeros: bool = False,
     min_max_normalization: bool = False,
-    transpose_matrix: bool = False
+    transpose_matrix: bool = False,
 ) -> np.ndarray:
     """Utility function to load a csv as a numpy array with common transformations
 
