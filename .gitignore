@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Mac OS folder files
+.DS_Store
+
+# Related to package
+data/output/*.csv
