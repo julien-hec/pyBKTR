@@ -1,6 +1,15 @@
 pyBKTR package
 ==============
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   pyBKTR.data
+   pyBKTR.examples
+
 Submodules
 ----------
 
@@ -20,10 +29,10 @@ pyBKTR.bktr\_config module
    :undoc-members:
    :show-inheritance:
 
-pyBKTR.kernel\_factories module
--------------------------------
+pyBKTR.kernel\_generators module
+--------------------------------
 
-.. automodule:: pyBKTR.kernel_factories
+.. automodule:: pyBKTR.kernel_generators
    :members:
    :undoc-members:
    :show-inheritance:

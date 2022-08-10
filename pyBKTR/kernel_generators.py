@@ -5,9 +5,9 @@ from typing import Callable
 import torch
 
 
-class KernelFactory(abc.ABC):
+class KernelGenerator(abc.ABC):
     """
-    Abstract Class Template for kernel factories
+    Abstract Class Template for kernel generators
     """
 
     @abc.abstractmethod
@@ -15,7 +15,7 @@ class KernelFactory(abc.ABC):
         pass
 
 
-class TemporalKernelFactory:
+class TemporalKernelGenerator:
     """Class to generate temporal kernels
 
     TemporalKernelGenerator can create temporal kernels according to provided parameters.
@@ -129,7 +129,7 @@ class TemporalKernelFactory:
         return self.kernel
 
 
-class SpatialKernelFactory(KernelFactory):
+class SpatialKernelGenerator(KernelGenerator):
     """Class to generate spatial kernels
 
     A SpatialKernelGenerator can create spatial kernels according
@@ -158,7 +158,7 @@ class SpatialKernelFactory(KernelFactory):
         kernel_variance: float,
         spatial_length_scale: float = 0,
     ):
-        """Initializing a SpatialKernelFactory instance
+        """Initializing a SpatialKernelGenerator instance
 
         Args:
             distance_matrix (torch.Tensor): Matrix containing the distance between each evaluated

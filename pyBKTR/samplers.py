@@ -4,7 +4,7 @@ from typing import Callable
 import numpy as np
 import torch
 
-from pyBKTR.kernel_factories import KernelFactory
+from pyBKTR.kernel_generators import KernelGenerator
 from pyBKTR.sampler_config import KernelSamplerConfig
 from pyBKTR.tensor_ops import TSR
 
@@ -12,14 +12,14 @@ from pyBKTR.tensor_ops import TSR
 class KernelParamSampler:
     """Class for kernel's hyperparameter sampling
 
-    The KernelParamSampler encapsulate all the behavior related to the sampling
-    of the kernel hyperparameters
+    The KernelParamSampler encapsulate all the behavior related to kernel
+    hyperparameters' sampling
 
     """
 
     __slots__ = (
         'config',
-        'kernel_factory',
+        'kernel_generator',
         'marginal_ll_eval_fn',
         'kernel_hparam_name',
         'theta_value',
@@ -29,8 +29,8 @@ class KernelParamSampler:
 
     config: KernelSamplerConfig
     """Kernel sampler configuration"""
-    kernel_factory: KernelFactory
-    """Kernel Factory used for the hyperparameter sampling process"""
+    kernel_generator: KernelGenerator
+    """Kernel Generator used for the hyperparameter sampling process"""
     marginal_ll_eval_fn: Callable
     """Marginal Likelihood Evaluator used in the sampling process"""
     kernel_hparam_name: str
@@ -43,24 +43,24 @@ class KernelParamSampler:
     def __init__(
         self,
         config: KernelSamplerConfig,
-        kernel_factory: KernelFactory,
+        kernel_generator: KernelGenerator,
         marginal_ll_eval_fn: Callable,
         kernel_hparam_name: str,
     ):
         self.config = config
-        self.kernel_factory = kernel_factory
+        self.kernel_generator = kernel_generator
         self.marginal_ll_eval_fn = marginal_ll_eval_fn
         self.kernel_hparam_name = kernel_hparam_name
         self._set_theta_value(config.hyper_mu_prior)
 
     def _set_theta_value(self, theta: float):
-        """Set the theta value for the sampler and for its respective kernel factory
+        """Set the theta value for the sampler and for its respective kernel generator
 
         Args:
             theta (float): _description_
         """
         self.theta_value = theta
-        setattr(self.kernel_factory, self.kernel_hparam_name, np.exp(theta))
+        setattr(self.kernel_generator, self.kernel_hparam_name, np.exp(theta))
 
     def initialize_theta_bounds(self):
         """Initialize sampling bounds according to current theta value and sampling scale"""
@@ -82,7 +82,7 @@ class KernelParamSampler:
         """The complete kernel hyperparameter sampling process"""
         initial_theta = self.theta_value
         self.initialize_theta_bounds()
-        self.kernel_factory.kernel_gen()
+        self.kernel_generator.kernel_gen()
         initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(self.theta_value)
 
         density_threshold = random.random()
@@ -90,7 +90,7 @@ class KernelParamSampler:
         while True:
             new_theta = self.sample_rand_theta_value()
             self._set_theta_value(new_theta)
-            self.kernel_factory.kernel_gen()
+            self.kernel_generator.kernel_gen()
             new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(new_theta)
 
             marg_ll_diff = new_marginal_likelihood - initial_marginal_likelihood

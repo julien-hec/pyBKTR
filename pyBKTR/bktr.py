@@ -4,7 +4,11 @@ import numpy as np
 import torch
 
 from pyBKTR.bktr_config import BKTRConfig
-from pyBKTR.kernel_factories import KernelFactory, SpatialKernelFactory, TemporalKernelFactory
+from pyBKTR.kernel_generators import (
+    KernelGenerator,
+    SpatialKernelGenerator,
+    TemporalKernelGenerator,
+)
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.samplers import (
     KernelParamSampler,
@@ -38,8 +42,8 @@ class BKTRRegressor:
         'total_sq_error',
         'mae',
         'rmse',
-        'temporal_kernel_factory',
-        'spatial_kernel_factory',
+        'temporal_kernel_generator',
+        'spatial_kernel_generator',
         'spatial_length_sampler',
         'decay_scale_sampler',
         'periodic_length_sampler',
@@ -67,9 +71,9 @@ class BKTRRegressor:
     total_sq_error: float
     mae: float
     rmse: float
-    # Kernel factories
-    temporal_kernel_factory: KernelFactory
-    spatial_kernel_factory: KernelFactory
+    # Kernel Generators
+    temporal_kernel_generator: KernelGenerator
+    spatial_kernel_generator: KernelGenerator
     # Samplers
     spatial_length_sampler: KernelParamSampler
     decay_scale_sampler: KernelParamSampler
@@ -262,14 +266,14 @@ class BKTRRegressor:
             for k, v in self._get_logged_params_dict().items()
         }
 
-    def _create_kernel_factories(self):
-        """Create and set the kernel factories for the spatial and temporal kernels"""
-        self.spatial_kernel_factory = SpatialKernelFactory(
+    def _create_kernel_generators(self):
+        """Create and set the kernel generators for the spatial and temporal kernels"""
+        self.spatial_kernel_generator = SpatialKernelGenerator(
             self.spatial_distance_tensor,
             self.config.spatial_smoothness_factor,
             self.config.kernel_variance,
         )
-        self.temporal_kernel_factory = TemporalKernelFactory(
+        self.temporal_kernel_generator = TemporalKernelGenerator(
             'periodic_se',
             self.covariates_dim['nb_times'],
             self.config.temporal_period_length,
@@ -306,19 +310,19 @@ class BKTRRegressor:
         """
         self.spatial_length_sampler = KernelParamSampler(
             config=self.config.spatial_length_config,
-            kernel_factory=self.spatial_kernel_factory,
+            kernel_generator=self.spatial_kernel_generator,
             marginal_ll_eval_fn=self._calc_spatial_marginal_ll,
             kernel_hparam_name='spatial_length_scale',
         )
         self.decay_scale_sampler = KernelParamSampler(
             config=self.config.decay_scale_config,
-            kernel_factory=self.temporal_kernel_factory,
+            kernel_generator=self.temporal_kernel_generator,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
             kernel_hparam_name='decay_time_scale',
         )
         self.periodic_length_sampler = KernelParamSampler(
             config=self.config.periodic_scale_config,
-            kernel_factory=self.temporal_kernel_factory,
+            kernel_generator=self.temporal_kernel_generator,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
             kernel_hparam_name='periodic_length_scale',
         )
@@ -332,13 +336,13 @@ class BKTRRegressor:
     def _calc_spatial_marginal_ll(self):
         """Calculate the spatial marginal likelihood"""
         return self.spatial_ll_evaluator.calc_likelihood(
-            self.spatial_kernel_factory.kernel, self.temporal_decomp, self.covs_decomp, self.tau
+            self.spatial_kernel_generator.kernel, self.temporal_decomp, self.covs_decomp, self.tau
         )
 
     def _calc_temporal_marginal_ll(self):
         """Calculate the temporal marginal likelihood"""
         return self.temporal_ll_evaluator.calc_likelihood(
-            self.temporal_kernel_factory.kernel, self.spatial_decomp, self.covs_decomp, self.tau
+            self.temporal_kernel_generator.kernel, self.spatial_decomp, self.covs_decomp, self.tau
         )
 
     def _sample_kernel_hparam(self):
@@ -446,7 +450,7 @@ class BKTRRegressor:
         """Initialize all parameters that are needed before we start the MCMC sampling"""
         self._init_covariate_decomp()
         self._set_y_estimate_and_errors(0)
-        self._create_kernel_factories()
+        self._create_kernel_generators()
         self._create_likelihood_evaluators()
         self._create_hparam_samplers()
         self._create_iter_estim_tensors()
