@@ -81,6 +81,14 @@ class BKTRConfig:
     config_spatial_length: KernelSamplerConfig = field(init=False)
     """Spatial length-scale's config (Paper -- :math:`\\phi`) created via init inputs"""
 
+    # Output Params
+    sampled_beta_indexes: list[int] = field(default_factory=list)
+    """Indexes of beta estimates that need to be sampled through iterations"""
+    sampled_y_indexes: list[int] = field(default_factory=list)
+    """Indexes of y estimates that need to be sampled through iterations"""
+    results_export_dir: str | None = None
+    """Path of the folder where the csv file will be exported (if None it is printed)"""
+
     def __post_init__(self):
         self.periodic_scale_config = KernelSamplerConfig(
             self.period_slice_sampling_scale,

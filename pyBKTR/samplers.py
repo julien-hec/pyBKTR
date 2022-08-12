@@ -159,7 +159,7 @@ class TauSampler:
 
     def sample(self, total_sq_error):
         b_tau = self.b_0 + 0.5 * total_sq_error
-        return torch.distributions.Gamma(self.a_tau.cpu(), b_tau.cpu()).sample()
+        return torch.distributions.Gamma(self.a_tau.cpu(), b_tau).sample()
 
 
 class PrecisionMatrixSampler:

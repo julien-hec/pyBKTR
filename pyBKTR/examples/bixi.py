@@ -7,7 +7,7 @@ from pyBKTR.utils import load_numpy_array_from_csv, log
 
 
 def run_bixi_bktr(
-    rel_output_path: str = '.',
+    results_export_dir: str,
     run_id_from: int = 1,
     run_id_to: int = 1,
     burn_in_iter: int = 100,
@@ -21,6 +21,9 @@ def run_bixi_bktr(
             burn_in_iter=burn_in_iter,
             decay_max_hparam_val=log(2),
             period_max_hparam_val=log(2),
+            sampled_beta_indexes=[230, 450],
+            sampled_y_indexes=[100, 325],
+            results_export_dir=results_export_dir,
         )
 
         def get_source_file_name(csv_name: str) -> str:
@@ -74,15 +77,5 @@ def run_bixi_bktr(
 
         # import cProfile
         # cProfile.run('bktr_regressor.mcmc_sampling()')
-        bktr_result = bktr_regressor.mcmc_sampling()
-
-        def write_np_array_to_csv(met_name: str, np_arr: np.ndarray, run_id: int):
-            csv_path = f'{rel_output_path}/py_bktr_{met_name}_{run_id}.csv'
-            np.savetxt(csv_path, np_arr, delimiter=',')
-
-        for met_name in ['mae', 'rmse', 'spatial_length', 'decay_scale', 'periodic_length', 'tau']:
-            write_np_array_to_csv(
-                met_name, np.array(bktr_regressor.logged_params_tensor[met_name].cpu()), r_id
-            )
-        for met_name in ['y_est', 'beta_est']:
-            write_np_array_to_csv(met_name, np.array(bktr_result[met_name].cpu().flatten()), r_id)
+        # bktr_result = bktr_regressor.mcmc_sampling()
+        bktr_regressor.mcmc_sampling()
