@@ -24,6 +24,7 @@ class KernelParamSampler:
         'theta_value',
         '_theta_min',
         '_theta_max',
+        'tsr',
     )
 
     config: KernelSamplerConfig
@@ -45,12 +46,14 @@ class KernelParamSampler:
         kernel_generator: KernelGenerator,
         marginal_ll_eval_fn: Callable,
         kernel_hparam_name: str,
+        tsr_instance: TSR,
     ):
         self.config = config
         self.kernel_generator = kernel_generator
         self.marginal_ll_eval_fn = marginal_ll_eval_fn
         self.kernel_hparam_name = kernel_hparam_name
         self._set_theta_value(config.hyper_mu_prior)
+        self.tsr = tsr_instance
 
     def _set_theta_value(self, theta: float):
         """Set the theta value for the sampler and for its respective kernel generator
@@ -63,7 +66,7 @@ class KernelParamSampler:
 
     def initialize_theta_bounds(self):
         """Initialize sampling bounds according to current theta value and sampling scale"""
-        theta_range = self.config.slice_sampling_scale * float(torch.rand(1))
+        theta_range = self.config.slice_sampling_scale * float(self.tsr.rand(1))
         self._theta_min = max(self.theta_value - theta_range, self.config.min_hyper_value)
         self._theta_max = min(
             self._theta_min + self.config.slice_sampling_scale, self.config.max_hyper_value
@@ -75,7 +78,7 @@ class KernelParamSampler:
 
     def sample_rand_theta_value(self):
         """Sample a random theta value within the sampling bounds"""
-        return self._theta_min + (self._theta_max - self._theta_min) * float(torch.rand(1))
+        return self._theta_min + (self._theta_max - self._theta_min) * float(self.tsr.rand(1))
 
     def sample(self):
         """The complete kernel hyperparameter sampling process"""
@@ -84,7 +87,7 @@ class KernelParamSampler:
         self.kernel_generator.kernel_gen()
         initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(self.theta_value)
 
-        density_threshold = float(torch.rand(1))
+        density_threshold = float(self.tsr.rand(1))
 
         while True:
             new_theta = self.sample_rand_theta_value()
@@ -103,7 +106,7 @@ class KernelParamSampler:
 
 # TODO See if we directly use the norm multivariate from torch
 def sample_norm_multivariate(
-    mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor
+    mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor, tsr_instance: TSR
 ) -> torch.Tensor:
     """_summary_
 
@@ -117,7 +120,7 @@ def sample_norm_multivariate(
     """
     return (
         torch.linalg.solve_triangular(
-            precision_upper_tri, torch.randn_like(mean_vec).unsqueeze(1), upper=True
+            precision_upper_tri, tsr_instance.randn_like(mean_vec).unsqueeze(1), upper=True
         ).squeeze()
         + mean_vec
     )
@@ -132,6 +135,7 @@ def get_cov_decomp_chol(
     tau: float,
     y: torch.Tensor,
     wish_precision_tensor: torch.Tensor,
+    tsr_instance: TSR,
 ):
     y_masked = omega * y
     # TODO Merge some parts with marginal ll of spatial and temporal
@@ -144,7 +148,7 @@ def get_cov_decomp_chol(
     psi_c_mask = psi_c_mask.permute([1, 0, 2, 3]).reshape(
         [psi_c.shape[0] * psi_c.shape[1], psi_c.shape[2] * psi_c.shape[3]]
     )
-    inv_s = TSR.kronecker_prod(torch.eye(rank_cp), wish_precision_tensor)
+    inv_s = TSR.kronecker_prod(tsr_instance.eye(rank_cp), wish_precision_tensor)
     lambda_c = tau * psi_c_mask.t().matmul(psi_c_mask) + inv_s
     chol_lc = torch.linalg.cholesky(lambda_c)
     cc = torch.linalg.solve(chol_lc, psi_c_mask.t().matmul(y_masked.t().flatten()))
@@ -173,13 +177,14 @@ class PrecisionMatrixSampler:
     wish_df: int
     wish_precision_tensor: torch.Tensor
 
-    def __init__(self, nb_covariates: int, rank_cp: int):
+    def __init__(self, nb_covariates: int, rank_cp: int, tsr_instance: TSR):
         self.nb_covariates = nb_covariates
         self.wish_df = nb_covariates + rank_cp
+        self.tsr = tsr_instance
 
     def sample(self, covs_decomp):
-        w = covs_decomp.matmul(covs_decomp.t()) + torch.eye(self.nb_covariates)
-        wish_sigma = ((w + w.t()) * 0.5).inverse().cpu()
+        w = covs_decomp.matmul(covs_decomp.t()) + self.tsr.eye(self.nb_covariates)
+        wish_sigma = ((w + w.t()) * 0.5).inverse()
         wish_precision_matrix = torch.distributions.Wishart(
             df=self.wish_df, covariance_matrix=wish_sigma
         ).sample()

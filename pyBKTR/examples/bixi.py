@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
@@ -14,6 +15,7 @@ def run_bixi_bktr(
     max_iter: int = 20,
     torch_seed: int | None = None,
     torch_device: str = 'cpu',
+    torch_dtype: torch.dtype = torch.float64,
 ) -> None:
 
     for _ in range(run_id_from, run_id_to + 1):
@@ -28,6 +30,7 @@ def run_bixi_bktr(
             results_export_dir=results_export_dir,
             torch_seed=torch_seed,
             torch_device=torch_device,
+            torch_dtype=torch_dtype,
         )
 
         def get_source_file_name(csv_name: str) -> str:
