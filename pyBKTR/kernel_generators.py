@@ -4,6 +4,8 @@ from typing import Callable
 
 import torch
 
+from pyBKTR.tensor_ops import TSR
+
 
 class KernelGenerator(abc.ABC):
     """
@@ -31,6 +33,7 @@ class TemporalKernelGenerator:
         'periodic_length_scale',
         'decay_time_scale',
         '_core_kernel_fn',
+        'tsr',
     )
 
     time_distances: torch.Tensor
@@ -42,6 +45,7 @@ class TemporalKernelGenerator:
     periodic_length_scale: float
     decay_time_scale: float
     _core_kernel_fn: Callable
+    tsr: TSR
 
     def __init__(
         self,
@@ -49,6 +53,7 @@ class TemporalKernelGenerator:
         nb_time_segments: int,
         period_length: int,
         kernel_variance: float,
+        tsr_instance: TSR,
         periodic_length_scale: float = 0,
         decay_time_scale: float = 0,
     ) -> None:
@@ -67,6 +72,7 @@ class TemporalKernelGenerator:
             decay_time_scale (float, optional): Decay time scale value
                 (Paper -- :math:`\\gamma_2`). Defaults to 0.
         """
+        self.tsr = tsr_instance
         self._core_kernel_fn = self._get_kernel_fn(kernel_fn_name)
         self._set_time_distance_matrix(nb_time_segments)
         self.period_length = period_length
@@ -92,7 +98,7 @@ class TemporalKernelGenerator:
         """
         Create and set a time distance matrix according to the number of time segments
         """
-        time_segments = torch.arange(0, nb_time_segments, dtype=torch.float64).unsqueeze(1)
+        time_segments = self.tsr.arange(0, nb_time_segments).unsqueeze(1)
         self.time_distances = time_segments - time_segments.t()
 
     def _periodic_kernel_gen(self) -> Callable:

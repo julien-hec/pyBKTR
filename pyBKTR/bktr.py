@@ -16,6 +16,7 @@ from pyBKTR.samplers import (
     get_cov_decomp_chol,
     sample_norm_multivariate,
 )
+from pyBKTR.tensor_ops import TSR
 
 
 class BKTRRegressor:
@@ -47,6 +48,7 @@ class BKTRRegressor:
         'precision_matrix_sampler',
         'spatial_ll_evaluator',
         'temporal_ll_evaluator',
+        'tsr',
     ]
     config: BKTRConfig
     spatial_distance_tensor: torch.Tensor
@@ -96,17 +98,14 @@ class BKTRRegressor:
         """
         self.config = bktr_config
         # Set tensor backend according to config
-        # torch.set_device_type(self.config.torch_device)
-        # torch.set_default_dtype(self.config.torch_dtype)
-        if self.config.torch_seed is not None:
-            torch.manual_seed(self.config.torch_seed)
+        self.tsr = TSR(self.config.torch_dtype, self.config.torch_device, self.config.torch_seed)
         # Assignation
-        self.spatial_distance_tensor = torch.tensor(spatial_distance_matrix)
-        self.y = torch.tensor(y)
-        self.omega = torch.tensor(omega)
-        self.tau = 1 / torch.tensor(self.config.sigma_r)
+        self.spatial_distance_tensor = self.tsr.tensor(spatial_distance_matrix)
+        self.y = self.tsr.tensor(y)
+        self.omega = self.tsr.tensor(omega)
+        self.tau = 1 / self.tsr.tensor(self.config.sigma_r)
         self._reshape_covariates(
-            torch.tensor(spatial_covariate_matrix), torch.tensor(temporal_covariate_matrix)
+            self.tsr.tensor(spatial_covariate_matrix), self.tsr.tensor(temporal_covariate_matrix)
         )
         self._initialize_params()
 
@@ -156,7 +155,7 @@ class BKTRRegressor:
             'nb_covariates': 1 + nb_spatial_covariates + nb_temporal_covariates,  # P
         }
 
-        intersect_covs = torch.ones([nb_spaces, nb_times, 1])
+        intersect_covs = self.tsr.ones([nb_spaces, nb_times, 1])
         spatial_covs = spatial_covariate_tensor.unsqueeze(1).expand(
             [nb_spaces, nb_times, nb_spatial_covariates]
         )
@@ -171,15 +170,9 @@ class BKTRRegressor:
         rank_decomp = self.config.rank_decomp
         covs_dim = self.covariates_dim
 
-        self.spatial_decomp = torch.randn(
-            [covs_dim['nb_spaces'], rank_decomp], dtype=torch.float64
-        )
-        self.temporal_decomp = torch.randn(
-            [covs_dim['nb_times'], rank_decomp], dtype=torch.float64
-        )
-        self.covs_decomp = torch.randn(
-            [covs_dim['nb_covariates'], rank_decomp], dtype=torch.float64
-        )
+        self.spatial_decomp = self.tsr.randn([covs_dim['nb_spaces'], rank_decomp])
+        self.temporal_decomp = self.tsr.randn([covs_dim['nb_times'], rank_decomp])
+        self.covs_decomp = self.tsr.randn([covs_dim['nb_covariates'], rank_decomp])
 
     def _create_result_logger(self):
         self.result_logger = ResultLogger(
@@ -205,6 +198,7 @@ class BKTRRegressor:
             self.covariates_dim['nb_times'],
             self.config.temporal_period_length,
             self.config.kernel_variance,
+            self.tsr,
         )
 
     def _create_likelihood_evaluators(self):
@@ -218,6 +212,7 @@ class BKTRRegressor:
             self.omega,
             self.y,
             is_transposed=False,
+            tsr_instance=self.tsr,
         )
         self.temporal_ll_evaluator = MarginalLikelihoodEvaluator(
             rank_decomp,
@@ -226,6 +221,7 @@ class BKTRRegressor:
             self.omega,
             self.y,
             is_transposed=True,
+            tsr_instance=self.tsr,
         )
 
     def _create_hparam_samplers(self):
@@ -240,24 +236,27 @@ class BKTRRegressor:
             kernel_generator=self.spatial_kernel_generator,
             marginal_ll_eval_fn=self._calc_spatial_marginal_ll,
             kernel_hparam_name='spatial_length_scale',
+            tsr_instance=self.tsr,
         )
         self.decay_scale_sampler = KernelParamSampler(
             config=self.config.decay_scale_config,
             kernel_generator=self.temporal_kernel_generator,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
             kernel_hparam_name='decay_time_scale',
+            tsr_instance=self.tsr,
         )
         self.periodic_length_sampler = KernelParamSampler(
             config=self.config.periodic_scale_config,
             kernel_generator=self.temporal_kernel_generator,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
             kernel_hparam_name='periodic_length_scale',
+            tsr_instance=self.tsr,
         )
 
         self.tau_sampler = TauSampler(self.config.a_0, self.config.b_0, self.omega.sum())
 
         self.precision_matrix_sampler = PrecisionMatrixSampler(
-            self.covariates_dim['nb_covariates'], self.config.rank_decomp
+            self.covariates_dim['nb_covariates'], self.config.rank_decomp, self.tsr
         )
 
     def _calc_spatial_marginal_ll(self):
@@ -300,7 +299,11 @@ class BKTRRegressor:
             self.tau
             * torch.linalg.solve_triangular(precision_mat, uu.unsqueeze(1), upper=True).squeeze()
         )
-        return sample_norm_multivariate(mean_vec, precision_mat).reshape_as(initial_decomp.t()).t()
+        return (
+            sample_norm_multivariate(mean_vec, precision_mat, self.tsr)
+            .reshape_as(initial_decomp.t())
+            .t()
+        )
 
     def _sample_spatial_decomp(self):
         """Sample a new spatial covariate decomposition"""
@@ -320,6 +323,7 @@ class BKTRRegressor:
             self.tau,
             self.y,
             self.precision_matrix_sampler.wish_precision_tensor,
+            self.tsr,
         )
         self.covs_decomp = self._sample_decomp_norm(
             self.covs_decomp, chol_res['chol_lc'], chol_res['cc']
