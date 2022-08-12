@@ -1,4 +1,3 @@
-import random
 from typing import Callable
 
 import numpy as np
@@ -64,7 +63,7 @@ class KernelParamSampler:
 
     def initialize_theta_bounds(self):
         """Initialize sampling bounds according to current theta value and sampling scale"""
-        theta_range = self.config.slice_sampling_scale * random.random()
+        theta_range = self.config.slice_sampling_scale * float(torch.rand(1))
         self._theta_min = max(self.theta_value - theta_range, self.config.min_hyper_value)
         self._theta_max = min(
             self._theta_min + self.config.slice_sampling_scale, self.config.max_hyper_value
@@ -76,7 +75,7 @@ class KernelParamSampler:
 
     def sample_rand_theta_value(self):
         """Sample a random theta value within the sampling bounds"""
-        return self._theta_min + (self._theta_max - self._theta_min) * random.random()
+        return self._theta_min + (self._theta_max - self._theta_min) * float(torch.rand(1))
 
     def sample(self):
         """The complete kernel hyperparameter sampling process"""
@@ -85,7 +84,7 @@ class KernelParamSampler:
         self.kernel_generator.kernel_gen()
         initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(self.theta_value)
 
-        density_threshold = random.random()
+        density_threshold = float(torch.rand(1))
 
         while True:
             new_theta = self.sample_rand_theta_value()
@@ -104,19 +103,24 @@ class KernelParamSampler:
 
 # TODO See if we directly use the norm multivariate from torch
 def sample_norm_multivariate(
-    mean_vec: torch.Tensor, precision_lower_tri: torch.Tensor
+    mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor
 ) -> torch.Tensor:
     """_summary_
 
     Args:
         mean_vec (torch.Tensor): A vector of normal distribution means
-        precision_lower_tri (torch.Tensor): A lower triangular matrix of
+        precision_upper_tri (torch.Tensor): An upper triangular matrix of
             precision between the distributions
 
     Returns:
         torch.Tensor: A sampled vector from the given normal multivariate information
     """
-    return torch.linalg.solve(precision_lower_tri, torch.randn_like(mean_vec)) + mean_vec
+    return (
+        torch.linalg.solve_triangular(
+            precision_upper_tri, torch.randn_like(mean_vec).unsqueeze(1), upper=True
+        ).squeeze()
+        + mean_vec
+    )
 
 
 def get_cov_decomp_chol(

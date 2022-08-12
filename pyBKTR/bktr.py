@@ -97,7 +97,9 @@ class BKTRRegressor:
         self.config = bktr_config
         # Set tensor backend according to config
         # torch.set_device_type(self.config.torch_device)
-        # torch.set_tensor_type(self.config.torch_dtype)
+        # torch.set_default_dtype(self.config.torch_dtype)
+        if self.config.torch_seed is not None:
+            torch.manual_seed(self.config.torch_seed)
         # Assignation
         self.spatial_distance_tensor = torch.tensor(spatial_distance_matrix)
         self.y = torch.tensor(y)
@@ -133,10 +135,7 @@ class BKTRRegressor:
             self._sample_temporal_decomp()
             self._set_errors_and_sample_precision_tau()
             self._collect_iter_values(i)
-
-        avg_estimates = self._calculate_avg_estimates()
-        self._log_iter_results()
-        return avg_estimates
+        return self._log_iter_results()
 
     def _reshape_covariates(
         self, spatial_covariate_tensor: torch.Tensor, temporal_covariate_tensor: torch.Tensor
@@ -297,7 +296,10 @@ class BKTRRegressor:
             torch.Tensor: A tensor containing the newly sampled covariate decomposition
         """
         precision_mat = chol_l.t()
-        mean_vec = self.tau * torch.linalg.solve(precision_mat, uu)
+        mean_vec = (
+            self.tau
+            * torch.linalg.solve_triangular(precision_mat, uu.unsqueeze(1), upper=True).squeeze()
+        )
         return sample_norm_multivariate(mean_vec, precision_mat).reshape_as(initial_decomp.t()).t()
 
     def _sample_spatial_decomp(self):
@@ -363,11 +365,8 @@ class BKTRRegressor:
         """Collect current iteration values inside the historical data tensor list"""
         self.result_logger.collect_iter_samples(iter, self._logged_scalar_params)
 
-    def _calculate_avg_estimates(self):
-        return self.result_logger.get_avg_estimates()
-
     def _log_iter_results(self):
-        self.result_logger.log_iter_results()
+        return self.result_logger.log_iter_results()
 
     def _initialize_params(self):
         """Initialize all parameters that are needed before we start the MCMC sampling"""
