@@ -181,6 +181,7 @@ class BKTRRegressor:
             covariates=self.covariates,
             nb_iter=self.config.max_iter,
             nb_burn_in_iter=self.config.burn_in_iter,
+            tensor_instance=self.tsr,
             sampled_beta_indexes=self.config.sampled_beta_indexes,
             sampled_y_indexes=self.config.sampled_y_indexes,
             results_export_dir=self.config.results_export_dir,
