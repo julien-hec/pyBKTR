@@ -41,6 +41,9 @@ class TSR:
     def ones(self, n: int | tuple[int]):
         return torch.ones(n, dtype=self.dtype, device=self.device)
 
+    def zeros(self, n: int | tuple[int]):
+        return torch.zeros(n, dtype=self.dtype, device=self.device)
+
     def rand(self, size: int | tuple[int]):
         return torch.rand(size, dtype=self.dtype, device=self.device)
 

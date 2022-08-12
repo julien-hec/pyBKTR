@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import torch
 
+from pyBKTR.tensor_ops import TSR
+
 
 class ResultLogger:
     __slots__ = [
@@ -27,6 +29,7 @@ class ResultLogger:
         'last_time_stamp',
         'export_path',
         'error_metrics',
+        'tsr',
     ]
 
     def __init__(
@@ -36,6 +39,7 @@ class ResultLogger:
         covariates: torch.Tensor,
         nb_iter: int,
         nb_burn_in_iter: int,
+        tensor_instance: TSR,
         results_export_dir: str | None = None,
         sampled_beta_indexes: list[int] = [],
         sampled_y_indexes: list[int] = [],
@@ -53,8 +57,9 @@ class ResultLogger:
             self.export_path = export_path
 
         # Create tensor that accumulate values needed for mean of evaluation
-        self.sum_beta_est = torch.zeros(covariates.shape)
-        self.sum_y_est = torch.zeros(y.shape)
+        self.tsr = tensor_instance
+        self.sum_beta_est = self.tsr.zeros(covariates.shape)
+        self.sum_y_est = self.tsr.zeros(y.shape)
 
         self.y = y
         self.omega = omega
