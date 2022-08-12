@@ -73,6 +73,8 @@ class BKTRConfig:
     """Type used for floating points in the tensor backend"""
     torch_device: torch.device = 'cpu'
     """Device used by the tensor backend for calculation 'cuda' or 'cpu'"""
+    torch_seed: int | None = None
+    """Seed used by the torch backend (If None, no seed is used)"""
 
     config_periodic_scale: KernelSamplerConfig = field(init=False)
     """Periodic length scale's config (Paper -- :math:`\\gamma_1`) created via init inputs"""

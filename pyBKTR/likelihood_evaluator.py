@@ -99,12 +99,13 @@ class MarginalLikelihoodEvaluator:
         lambda_u = lambda_u + self.inv_k
 
         self.chol_lu = torch.linalg.cholesky(lambda_u)
-        self.uu = torch.linalg.solve(
+        self.uu = torch.linalg.solve_triangular(
             self.chol_lu,
-            torch.einsum(
-                'ijk,ik->ji', [psi_u_mask, self.y_masked.permute(self.axis_permutation)]
-            ).flatten(),
-        )
+            torch.einsum('ijk,ik->ji', [psi_u_mask, self.y_masked.permute(self.axis_permutation)])
+            .flatten()
+            .unsqueeze(1),
+            upper=False,
+        ).squeeze()
         self.likelihood = float(
             (
                 0.5 * tau**2 * self.uu.t().matmul(self.uu)

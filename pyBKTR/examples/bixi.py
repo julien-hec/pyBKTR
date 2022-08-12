@@ -10,11 +10,13 @@ def run_bixi_bktr(
     results_export_dir: str,
     run_id_from: int = 1,
     run_id_to: int = 1,
-    burn_in_iter: int = 100,
-    max_iter: int = 200,
+    burn_in_iter: int = 10,
+    max_iter: int = 20,
+    torch_seed: int | None = None,
+    torch_device: str = 'cpu',
 ) -> None:
 
-    for r_id in range(run_id_from, run_id_to + 1):
+    for _ in range(run_id_from, run_id_to + 1):
         bktr_config = BKTRConfig(
             rank_decomp=10,
             max_iter=max_iter,
@@ -24,6 +26,8 @@ def run_bixi_bktr(
             sampled_beta_indexes=[230, 450],
             sampled_y_indexes=[100, 325],
             results_export_dir=results_export_dir,
+            torch_seed=torch_seed,
+            torch_device=torch_device,
         )
 
         def get_source_file_name(csv_name: str) -> str:
@@ -75,7 +79,4 @@ def run_bixi_bktr(
             omega=bixi_omega,
         )
 
-        # import cProfile
-        # cProfile.run('bktr_regressor.mcmc_sampling()')
-        # bktr_result = bktr_regressor.mcmc_sampling()
         bktr_regressor.mcmc_sampling()

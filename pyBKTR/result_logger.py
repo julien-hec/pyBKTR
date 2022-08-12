@@ -79,6 +79,10 @@ class ResultLogger:
             self.y_estimates, self.beta_estimates
         )
 
+        if iter > self.nb_burn_in_iter:
+            self.sum_beta_est += self.beta_estimates
+            self.sum_y_est += self.y_estimates
+
         total_logged_params = {
             **{'iter': iter},
             **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
@@ -136,9 +140,6 @@ class ResultLogger:
         # TODO check if use avg to calculate iter error in matlab and if yes why?
         self.y_estimates = torch.einsum('ijk,ijk->ij', self.covariates, self.beta_estimates)
 
-        self.sum_beta_est += self.beta_estimates
-        self.sum_y_est += self.y_estimates
-
     def _get_y_and_beta_sampled_values(
         self, y_estimates: torch.Tensor, beta_estimates: torch.Tensor
     ) -> dict[str, float]:
@@ -156,7 +157,7 @@ class ResultLogger:
         formated_results = [f'{k.replace("_", " ")} is {v:.4f}' for k, v in result_dict.items()]
         print(f'** Result for iter {iter:<4} : {" || ".join(formated_results)} **')
 
-    def get_avg_estimates(self) -> dict[str, float | torch.Tensor]:
+    def _get_avg_estimates(self) -> dict[str, float | torch.Tensor]:
         """Calculate the final dictionary of values returned by the MCMC sampling
 
         The final values include the y estimation, the average estimated betas and the errors
@@ -164,11 +165,15 @@ class ResultLogger:
         Returns:
             dict [str, float | torch.Tensor]: A dictionary of the MCMC's values of interest
         """
-        nb_after_burn_in_iter = self.nb_iter - self.nb_burn_in_iter + 1
+        nb_after_burn_in_iter = self.nb_iter - self.nb_burn_in_iter
+        self.beta_estimates = self.sum_beta_est / nb_after_burn_in_iter
+        self.y_estimates = self.sum_y_est / nb_after_burn_in_iter
+        error_metrics = self._set_error_metrics()
+        self._print_iter_result(-1, error_metrics)
         return {
-            'y_est': self.sum_y_est / nb_after_burn_in_iter,
-            'beta_est': self.sum_beta_est / nb_after_burn_in_iter,
-            **self.error_metrics,
+            'y_est': self.y_estimates,
+            'beta_est': self.beta_estimates,
+            **error_metrics,
         }
 
     def _get_file_name(self, file_prefix: str):
@@ -177,12 +182,13 @@ class ResultLogger:
 
     def log_iter_results(self):
         iter_results_df = pd.DataFrame.from_dict(self.logged_params_map)
+        avg_estimates = self._get_avg_estimates()
         if self.export_path is None:
             print(iter_results_df)
         else:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
-            avg_estimates = self.get_avg_estimates()
             y_est = avg_estimates['y_est'].cpu().flatten()
             beta_est = avg_estimates['beta_est'].cpu().flatten()
             np.savetxt(self._get_file_name('y_estimates'), y_est, delimiter=',')
             np.savetxt(self._get_file_name('beta_estimates'), beta_est, delimiter=',')
+        return avg_estimates
