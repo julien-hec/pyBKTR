@@ -60,8 +60,6 @@ class BKTRRegressor:
     spatial_decomp: torch.Tensor  # U
     temporal_decomp: torch.Tensor  # V
     covs_decomp: torch.Tensor  # C or W
-    # total squared errors (change during iter)
-    total_sq_error: float
     # Kernel Generators
     temporal_kernel_generator: KernelGenerator
     spatial_kernel_generator: KernelGenerator
@@ -185,12 +183,12 @@ class BKTRRegressor:
         )
 
     def _create_result_logger(self):
-        nb_after_burn_iter = self.config.max_iter - self.config.burn_in_iter + 1
         self.result_logger = ResultLogger(
             y=self.y,
             omega=self.omega,
             covariates=self.covariates,
-            nb_after_burn_iter=nb_after_burn_iter,
+            nb_iter=self.config.max_iter,
+            nb_burn_in_iter=self.config.burn_in_iter,
             sampled_beta_indexes=self.config.sampled_beta_indexes,
             sampled_y_indexes=self.config.sampled_y_indexes,
             results_export_dir=self.config.results_export_dir,

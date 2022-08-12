@@ -13,7 +13,8 @@ class ResultLogger:
         'y',
         'omega',
         'covariates',
-        'nb_after_burn_iter',
+        'nb_iter',
+        'nb_burn_in_iter',
         'export_dir',
         'results_export_dir',
         'sampled_beta_indexes',
@@ -33,12 +34,12 @@ class ResultLogger:
         y: torch.Tensor,
         omega: torch.Tensor,
         covariates: torch.Tensor,
-        nb_after_burn_iter: int,
+        nb_iter: int,
+        nb_burn_in_iter: int,
         results_export_dir: str | None = None,
         sampled_beta_indexes: list[int] = [],
         sampled_y_indexes: list[int] = [],
     ):
-        # TODO collect only after burn-in
         # Create a tensor dictionary holding scalar data gathered through all iterations
         self.logged_params_map = defaultdict(list)
 
@@ -58,7 +59,8 @@ class ResultLogger:
         self.y = y
         self.omega = omega
         self.covariates = covariates
-        self.nb_after_burn_iter = nb_after_burn_iter
+        self.nb_iter = nb_iter
+        self.nb_burn_in_iter = nb_burn_in_iter
 
         # Indexes that need to be logged in the result output
         self.sampled_beta_indexes = sampled_beta_indexes
@@ -79,6 +81,7 @@ class ResultLogger:
 
         total_logged_params = {
             **{'iter': iter},
+            **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
             **iter_logged_params,
             **self.error_metrics,
             **y_beta_sampled_values,
@@ -161,9 +164,10 @@ class ResultLogger:
         Returns:
             dict [str, float | torch.Tensor]: A dictionary of the MCMC's values of interest
         """
+        nb_after_burn_in_iter = self.nb_iter - self.nb_burn_in_iter + 1
         return {
-            'y_est': self.sum_y_est / self.nb_after_burn_iter,
-            'beta_est': self.sum_beta_est / self.nb_after_burn_iter,
+            'y_est': self.sum_y_est / nb_after_burn_in_iter,
+            'beta_est': self.sum_beta_est / nb_after_burn_in_iter,
             **self.error_metrics,
         }
 
@@ -177,7 +181,8 @@ class ResultLogger:
             print(iter_results_df)
         else:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
-            y_est = (self.sum_y_est / self.nb_after_burn_iter).cpu().flatten()
+            avg_estimates = self.get_avg_estimates()
+            y_est = avg_estimates['y_est'].cpu().flatten()
+            beta_est = avg_estimates['beta_est'].cpu().flatten()
             np.savetxt(self._get_file_name('y_estimates'), y_est, delimiter=',')
-            beta_est = (self.sum_beta_est / self.nb_after_burn_iter).cpu().flatten()
             np.savetxt(self._get_file_name('beta_estimates'), beta_est, delimiter=',')
