@@ -1,5 +1,3 @@
-from typing import Union
-
 import numpy as np
 import torch
 
@@ -10,6 +8,7 @@ from pyBKTR.kernel_generators import (
     TemporalKernelGenerator,
 )
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
+from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
     KernelParamSampler,
     PrecisionMatrixSampler,
@@ -38,10 +37,7 @@ class BKTRRegressor:
         'spatial_decomp',
         'temporal_decomp',
         'covs_decomp',
-        'y_estimate',
-        'total_sq_error',
-        'mae',
-        'rmse',
+        'result_logger',
         'temporal_kernel_generator',
         'spatial_kernel_generator',
         'spatial_length_sampler',
@@ -51,8 +47,6 @@ class BKTRRegressor:
         'precision_matrix_sampler',
         'spatial_ll_evaluator',
         'temporal_ll_evaluator',
-        'avg_y_est',
-        'sum_beta_est',
     ]
     config: BKTRConfig
     spatial_distance_tensor: torch.Tensor
@@ -66,14 +60,11 @@ class BKTRRegressor:
     spatial_decomp: torch.Tensor  # U
     temporal_decomp: torch.Tensor  # V
     covs_decomp: torch.Tensor  # C or W
-    # Y estimates and errors (change during iter)
-    y_estimate: torch.Tensor
-    total_sq_error: float
-    mae: float
-    rmse: float
     # Kernel Generators
     temporal_kernel_generator: KernelGenerator
     spatial_kernel_generator: KernelGenerator
+    # Result Logger
+    result_logger: ResultLogger
     # Samplers
     spatial_length_sampler: KernelParamSampler
     decay_scale_sampler: KernelParamSampler
@@ -83,9 +74,6 @@ class BKTRRegressor:
     # Likelihood evaluators
     spatial_ll_evaluator: MarginalLikelihoodEvaluator
     temporal_ll_evaluator: MarginalLikelihoodEvaluator
-    # used to collect mcmc samples
-    avg_y_est: torch.Tensor
-    sum_beta_est: torch.Tensor
 
     def __init__(
         self,
@@ -120,7 +108,7 @@ class BKTRRegressor:
         )
         self._initialize_params()
 
-    def mcmc_sampling(self) -> dict[str, Union[float, torch.Tensor]]:
+    def mcmc_sampling(self) -> dict[str, float | torch.Tensor]:
         """Launch the MCMC sampling process for a predefined number of iterations
 
         1. Sample the spatial length scale hyperparameter
@@ -135,19 +123,20 @@ class BKTRRegressor:
         10. Collect all the important data for the iteration
 
         Returns:
-            dict [str, Union[float, torch.Tensor]]: A dictionary with the MCMC sampling's results
+            dict [str, float | torch.Tensor]: A dictionary with the MCMC sampling's results
         """
         for i in range(1, self.config.max_iter + 1):
-            print(f'*** Running iter {i} ***')
             self._sample_kernel_hparam()
             self._sample_precision_wish()
             self._sample_spatial_decomp()
             self._sample_covariate_decomp()
             self._sample_temporal_decomp()
-            self._set_y_estimate_and_errors(i)
-            self._sample_precision_tau()
-            self._collect_iter_samples(i)
-        return self._calculate_avg_estimates()
+            self._set_errors_and_sample_precision_tau()
+            self._collect_iter_values(i)
+
+        avg_estimates = self._calculate_avg_estimates()
+        self._log_iter_results()
+        return avg_estimates
 
     def _reshape_covariates(
         self, spatial_covariate_tensor: torch.Tensor, temporal_covariate_tensor: torch.Tensor
@@ -193,78 +182,17 @@ class BKTRRegressor:
             [covs_dim['nb_covariates'], rank_decomp], dtype=torch.float64
         )
 
-    @staticmethod
-    def _calculate_error_metrics(
-        y_estimate: torch.Tensor, y: torch.Tensor, omega: torch.Tensor
-    ) -> dict[str, float]:
-        """Calculate error metrics of interest (MAE, RMSE, Total Error)
-
-        Args:
-            y_estimate (torch.Tensor): Estimation of the response variable
-            y (torch.Tensor): Response variable that we are trying to predict
-            omega (torch.Tensor): Mask showing if a y observation is missing or not
-
-        Returns:
-            dict[str, float]: A dictionary containing the values of the error metrics
-        """
-        nb_observ = omega.sum()
-        err_matrix = (y_estimate - y) * omega
-        total_sq_error = err_matrix.norm() ** 2
-        mae = err_matrix.abs().sum() / nb_observ
-        rmse = (total_sq_error / nb_observ).sqrt()
-        return {'total_sq_error': total_sq_error, 'mae': mae, 'rmse': rmse}
-
-    def _set_y_estimate_and_errors(self, iter):
-        """Calculate the estimated y and set the iteration errors appropriately
-
-        Args:
-            iter (int): Current iteration index
-        """
-        # Calculate Coefficient Estimation
-        coefficient_estimate = torch.einsum(
-            'im,jm,km->ijk', [self.spatial_decomp, self.temporal_decomp, self.covs_decomp]
+    def _create_result_logger(self):
+        self.result_logger = ResultLogger(
+            y=self.y,
+            omega=self.omega,
+            covariates=self.covariates,
+            nb_iter=self.config.max_iter,
+            nb_burn_in_iter=self.config.burn_in_iter,
+            sampled_beta_indexes=self.config.sampled_beta_indexes,
+            sampled_y_indexes=self.config.sampled_y_indexes,
+            results_export_dir=self.config.results_export_dir,
         )
-        self.y_estimate = torch.einsum('ijk,ijk->ij', self.covariates, coefficient_estimate)
-
-        # Iteration errors
-        err_metrics = self._calculate_error_metrics(self.y_estimate, self.y, self.omega)
-        self.total_sq_error = err_metrics['total_sq_error']
-
-        # Average errors
-        burn_in_iter = self.config.burn_in_iter
-        if iter == 0:
-            avg_y_est = self.y_estimate
-        else:
-            lbound_indx = max(0, iter - burn_in_iter)
-            sum_y_est = (
-                self.logged_params_tensor['y_estimate'][lbound_indx:].sum(0) + self.y_estimate
-            )
-            avg_y_est = sum_y_est / (iter - lbound_indx)
-        avg_err_metrics = self._calculate_error_metrics(avg_y_est, self.y, self.omega)
-        self.mae = avg_err_metrics['mae']
-        self.rmse = avg_err_metrics['rmse']
-        print(f'Iter Error: MAE is {self.mae.cpu():.4f} || RMSE is {self.rmse.cpu():.4f}')
-
-        # Collect sample for mcmc results
-        self.avg_y_est = avg_y_est
-        if iter == burn_in_iter + 1:
-            self.sum_beta_est = coefficient_estimate
-        elif iter > burn_in_iter + 1:
-            self.sum_beta_est = self.sum_beta_est + coefficient_estimate
-
-    def _create_iter_estim_tensors(self) -> dict[str, torch.Tensor]:
-        """Create the tensor dictionary holding all the data gathered through all iterations
-
-        Returns:
-            dict[str, torch.Tensor]: Tensor Dictionary of historical data
-        """
-        self.logged_params_tensor = {
-            k: torch.zeros(
-                [self.config.max_iter]
-                + (list(v.shape) if torch.is_tensor(v) and list(v.shape) else [1])
-            )
-            for k, v in self._get_logged_params_dict().items()
-        }
 
     def _create_kernel_generators(self):
         """Create and set the kernel generators for the spatial and temporal kernels"""
@@ -406,51 +334,45 @@ class BKTRRegressor:
             self.temporal_decomp, ll_eval.chol_lu, ll_eval.uu
         )
 
-    def _sample_precision_tau(self):
-        """Sample a new tau"""
-        self.tau = self.tau_sampler.sample(self.total_sq_error)
+    def _set_errors_and_sample_precision_tau(self):
+        """Sample a new tau and set errors"""
+        self.result_logger.set_y_and_beta_estimates(self._decomposition_tensors)
+        error_metrics = self.result_logger._set_error_metrics()
+        self.tau = self.tau_sampler.sample(error_metrics['total_sq_error'])
 
-    def _get_logged_params_dict(self):
-        """Get a list of current iteration values needed for historical data"""
+    @property
+    def _logged_scalar_params(self):
+        """Get a dict of current iteration values needed for historical data"""
         return {
-            'spatial_decomp': self.spatial_decomp,
-            'temporal_decomp': self.temporal_decomp,
-            'covs_decomp': self.covs_decomp,
-            'tau': self.tau,
-            'y_estimate': self.y_estimate,
-            'mae': self.mae,
-            'rmse': self.rmse,
+            'tau': float(self.tau),
             'spatial_length': self.spatial_length_sampler.theta_value,
             'decay_scale': self.decay_scale_sampler.theta_value,
             'periodic_length': self.periodic_length_sampler.theta_value,
         }
 
-    def _collect_iter_samples(self, iter):
-        """Collect current iteration values inside the historical data tensor list"""
-        logged_params = self._get_logged_params_dict()
-        for k, v in logged_params.items():
-            self.logged_params_tensor[k][iter - 1] = v
-
-    def _calculate_avg_estimates(self) -> dict[str, Union[float, torch.Tensor]]:
-        """Calculate the final dictionary of values returned by the MCMC sampling
-
-        The final values include the y estimation, the average estimated betas and the errors
-
-        Returns:
-            dict [str, Union[float, torch.Tensor]]: A dictionary of the MCMC's values of interest
-        """
+    @property
+    def _decomposition_tensors(self):
+        """Get a dict of current iteration decomposition needed to calculate estimated betas"""
         return {
-            'y_est': self.avg_y_est,
-            'beta_est': self.sum_beta_est / (self.config.max_iter - self.config.burn_in_iter + 1),
-            'mae': self.mae,
-            'rmse': self.rmse,
+            'spatial_decomp': self.spatial_decomp,
+            'temporal_decomp': self.temporal_decomp,
+            'covs_decomp': self.covs_decomp,
         }
+
+    def _collect_iter_values(self, iter: int):
+        """Collect current iteration values inside the historical data tensor list"""
+        self.result_logger.collect_iter_samples(iter, self._logged_scalar_params)
+
+    def _calculate_avg_estimates(self):
+        return self.result_logger.get_avg_estimates()
+
+    def _log_iter_results(self):
+        self.result_logger.log_iter_results()
 
     def _initialize_params(self):
         """Initialize all parameters that are needed before we start the MCMC sampling"""
         self._init_covariate_decomp()
-        self._set_y_estimate_and_errors(0)
+        self._create_result_logger()
         self._create_kernel_generators()
         self._create_likelihood_evaluators()
         self._create_hparam_samplers()
-        self._create_iter_estim_tensors()
