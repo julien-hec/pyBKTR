@@ -80,8 +80,12 @@ class MarginalLikelihoodEvaluator:
         )
 
         self.chol_k = torch.linalg.cholesky(kernel_values)
+        kernel_inverse = torch.linalg.solve(
+            self.chol_k.t(), torch.linalg.solve(self.chol_k, self.tsr.eye(kernel_size))
+        )
+        stabilized_kernel_inv = (kernel_inverse.t() + kernel_inverse) / 2
         self.inv_k = TSR.kronecker_prod(
-            self.tsr.eye(rank_decomp), (kernel_values).inverse()
+            self.tsr.eye(rank_decomp), stabilized_kernel_inv
         )  # I_R Kron inv(Ks)
 
         lambda_u = tau * torch.einsum('ijk,ilk->ijl', [psi_u_mask, psi_u_mask])  # tau * H_T * H_T'

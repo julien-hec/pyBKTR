@@ -128,8 +128,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Mac OS folder files
+# Folder utility files
 .DS_Store
+.vscode
 
 # Related to package
-data/
+/data/

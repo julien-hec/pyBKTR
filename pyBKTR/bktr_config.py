@@ -24,6 +24,12 @@ class BKTRConfig:
     """Number of iteration before the sampling starts (Paper -- :math:`K_1`)"""
     temporal_period_length: int = 7
     """Period used in the periodic kernel (Paper -- :math:`T`)"""
+    temporal_kernel_fn_name: str = 'periodic_se'
+    """Kernel function used for temporal kernel. Choices are (periodic_se, se, periodic)"""
+    kernel_time_segment_duration: float = 1
+    """Duration of one time segment in the kernel TODO what is that? see COVSE matlab"""
+    has_stabilizing_diag: bool = False
+    """Indicate if we add a stabilizing diagonal in the temporal kernel"""
     spatial_smoothness_factor: int = 3
     """Smoothness factor used in Matern kernel (Choice in 1, 3 or 5 -- 3 for Matern 3/2)"""
     kernel_variance: float = 1

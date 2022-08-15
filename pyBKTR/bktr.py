@@ -107,7 +107,6 @@ class BKTRRegressor:
         self._reshape_covariates(
             self.tsr.tensor(spatial_covariate_matrix), self.tsr.tensor(temporal_covariate_matrix)
         )
-        self._initialize_params()
 
     def mcmc_sampling(self) -> dict[str, float | torch.Tensor]:
         """Launch the MCMC sampling process for a predefined number of iterations
@@ -126,6 +125,7 @@ class BKTRRegressor:
         Returns:
             dict [str, float | torch.Tensor]: A dictionary with the MCMC sampling's results
         """
+        self._initialize_params()
         for i in range(1, self.config.max_iter + 1):
             self._sample_kernel_hparam()
             self._sample_precision_wish()
@@ -185,6 +185,7 @@ class BKTRRegressor:
             sampled_beta_indexes=self.config.sampled_beta_indexes,
             sampled_y_indexes=self.config.sampled_y_indexes,
             results_export_dir=self.config.results_export_dir,
+            seed=self.config.torch_seed,
         )
 
     def _create_kernel_generators(self):
@@ -195,11 +196,13 @@ class BKTRRegressor:
             self.config.kernel_variance,
         )
         self.temporal_kernel_generator = TemporalKernelGenerator(
-            'periodic_se',
+            self.config.temporal_kernel_fn_name,
             self.covariates_dim['nb_times'],
             self.config.temporal_period_length,
             self.config.kernel_variance,
             self.tsr,
+            time_segment_duration=self.config.kernel_time_segment_duration,
+            has_stabilizing_diag=self.config.has_stabilizing_diag,
         )
 
     def _create_likelihood_evaluators(self):

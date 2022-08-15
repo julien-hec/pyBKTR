@@ -8,7 +8,7 @@ class TSR:
     Class containing all tensor operations used in BKTR
     """
 
-    def __init__(self, dtype: torch.TensorType, device: str, seed: int):
+    def __init__(self, dtype: torch.TensorType, device: str, seed: int | None = None):
         self.dtype = dtype
         self.device = device
         if seed is not None:

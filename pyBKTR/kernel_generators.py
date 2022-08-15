@@ -34,7 +34,11 @@ class TemporalKernelGenerator:
         'decay_time_scale',
         '_core_kernel_fn',
         'tsr',
+        'has_stabilizing_diag',
+        'time_segment_duration',
     )
+
+    STAB_DIAG_MULTIPLIER = 1e-12
 
     time_distances: torch.Tensor
     """A matrix expressing the distance between two time segments"""
@@ -46,6 +50,8 @@ class TemporalKernelGenerator:
     decay_time_scale: float
     _core_kernel_fn: Callable
     tsr: TSR
+    has_stabilizing_diag: bool
+    time_segment_duration: float
 
     def __init__(
         self,
@@ -56,6 +62,8 @@ class TemporalKernelGenerator:
         tsr_instance: TSR,
         periodic_length_scale: float = 0,
         decay_time_scale: float = 0,
+        has_stabilizing_diag: bool = True,
+        time_segment_duration: float = 0.1,
     ) -> None:
         """Initializing a TemporalKernelGenerator instance
 
@@ -71,14 +79,19 @@ class TemporalKernelGenerator:
                 (Paper -- :math:`\\gamma_1`). Defaults to 0.
             decay_time_scale (float, optional): Decay time scale value
                 (Paper -- :math:`\\gamma_2`). Defaults to 0.
+            has_stabilizing_diag (bool, optional): Indicate if we are adding a stabilizing diagonal
+                to help cholesky decomposition. Defaults to False.
+            time_segment_duration (float, optional): Duration between all segments in the kernel,
+                TODO check. Defaults to 1.
         """
         self.tsr = tsr_instance
         self._core_kernel_fn = self._get_kernel_fn(kernel_fn_name)
-        self._set_time_distance_matrix(nb_time_segments)
+        self._set_time_distance_matrix(nb_time_segments, time_segment_duration)
         self.period_length = period_length
         self.kernel_variance = kernel_variance
         self.periodic_length_scale = periodic_length_scale
         self.decay_time_scale = decay_time_scale
+        self.has_stabilizing_diag = has_stabilizing_diag
 
     def _get_kernel_fn(self, kernel_fn_name: str) -> Callable:
         """
@@ -94,11 +107,13 @@ class TemporalKernelGenerator:
             case _:
                 raise ValueError('Please choose a valid kernel function name')
 
-    def _set_time_distance_matrix(self, nb_time_segments: int) -> None:
+    def _set_time_distance_matrix(
+        self, nb_time_segments: int, time_segment_duration: float = 1
+    ) -> None:
         """
         Create and set a time distance matrix according to the number of time segments
         """
-        time_segments = self.tsr.arange(0, nb_time_segments).unsqueeze(1)
+        time_segments = self.tsr.arange(0, nb_time_segments).unsqueeze(1) * time_segment_duration
         self.time_distances = time_segments - time_segments.t()
 
     def _periodic_kernel_gen(self) -> Callable:
@@ -132,6 +147,10 @@ class TemporalKernelGenerator:
             torch.tensor: Kernel values for the current instance configuration
         """
         self.kernel = self.kernel_variance * self._core_kernel_fn()
+        if self.has_stabilizing_diag:
+            self.kernel = self.kernel + self.STAB_DIAG_MULTIPLIER * self.tsr.eye(
+                self.kernel.shape[0]
+            )
         return self.kernel
 
 
@@ -198,7 +217,7 @@ class SpatialKernelGenerator(KernelGenerator):
 
     def kernel_gen(self) -> torch.Tensor:
         """
-        Method that generates, sets and return a kernel for a given temporal kernel configuration
+        Method that generates, sets and return a kernel for a given spatial kernel configuration
 
         Returns:
             torch.tensor: Kernel values for the current instance configuration
