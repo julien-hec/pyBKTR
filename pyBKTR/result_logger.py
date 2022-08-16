@@ -146,7 +146,6 @@ class ResultLogger:
                 decomp_tensors_map['covs_decomp'],
             ],
         )
-        # TODO check if use avg to calculate iter error in matlab and if yes why?
         self.y_estimates = torch.einsum('ijk,ijk->ij', self.covariates, self.beta_estimates)
 
     def _get_y_and_beta_sampled_values(

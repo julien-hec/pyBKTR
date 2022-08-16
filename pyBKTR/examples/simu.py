@@ -54,7 +54,7 @@ def run_simu_bktr(
         y_full_matrix = load_numpy_array_from_csv(
             get_source_file_name('simu_y_full'), has_header=False
         )
-        omega = y_full_matrix > 0
+        omega = y_full_matrix != 0
         temporal_covariates = load_numpy_array_from_csv(
             get_source_file_name('simu_temporal_covariates'), has_header=False
         )
