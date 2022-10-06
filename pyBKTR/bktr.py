@@ -2,11 +2,7 @@ import numpy as np
 import torch
 
 from pyBKTR.bktr_config import BKTRConfig
-from pyBKTR.kernel_generators import (
-    KernelGenerator,
-    SpatialKernelGenerator,
-    TemporalKernelGenerator,
-)
+from pyBKTR.kernel_generators import KernelGenerator
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
@@ -28,7 +24,6 @@ class BKTRRegressor:
 
     __slots__ = [
         'config',
-        'spatial_distance_tensor',
         'y',
         'omega',
         'covariates',
@@ -39,18 +34,16 @@ class BKTRRegressor:
         'temporal_decomp',
         'covs_decomp',
         'result_logger',
-        'temporal_kernel_generator',
-        'spatial_kernel_generator',
-        'spatial_length_sampler',
-        'decay_scale_sampler',
-        'periodic_length_sampler',
+        'temporal_kernel',
+        'spatial_kernel',
+        'spatial_params_sampler',
+        'temporal_params_sampler',
         'tau_sampler',
         'precision_matrix_sampler',
         'spatial_ll_evaluator',
         'temporal_ll_evaluator',
     ]
     config: BKTRConfig
-    spatial_distance_tensor: torch.Tensor
     y: torch.Tensor
     omega: torch.Tensor
     covariates: torch.Tensor
@@ -62,14 +55,13 @@ class BKTRRegressor:
     temporal_decomp: torch.Tensor  # V
     covs_decomp: torch.Tensor  # C or W
     # Kernel Generators
-    temporal_kernel_generator: KernelGenerator
-    spatial_kernel_generator: KernelGenerator
+    temporal_kernel: KernelGenerator
+    spatial_kernel: KernelGenerator
     # Result Logger
     result_logger: ResultLogger
     # Samplers
-    spatial_length_sampler: KernelParamSampler
-    decay_scale_sampler: KernelParamSampler
-    periodic_length_sampler: KernelParamSampler
+    spatial_params_sampler: KernelParamSampler
+    temporal_params_sampler: KernelParamSampler
     tau_sampler: TauSampler
     precision_matrix_sampler: PrecisionMatrixSampler
     # Likelihood evaluators
@@ -81,9 +73,10 @@ class BKTRRegressor:
         bktr_config: BKTRConfig,
         temporal_covariate_matrix: np.ndarray,
         spatial_covariate_matrix: np.ndarray,
-        spatial_distance_matrix: np.ndarray,
         y: np.ndarray,
         omega: np.ndarray,
+        temporal_kernel: KernelGenerator,
+        spatial_kernel: KernelGenerator,
     ):
         """Create a new *BKTRRegressor* object.
 
@@ -91,35 +84,34 @@ class BKTRRegressor:
             bktr_config (BKTRConfig): Configuration used for the BKTR regression
             temporal_covariate_matrix (np.ndarray):  Temporal Covariates
             spatial_covariate_matrix (np.ndarray): Spatial Covariates
-            spatial_distance_matrix (np.ndarray): Distance between spatial entities
             y (np.ndarray): Response variable that we are trying to predict
             omega (np.ndarray): Mask showing if a y observation is missing or not
+            temporal_kernel (KernelGenerator): Temporal Kernel Used
+            spatial_kernel (KernelGenerator): Spatial Kernel Used
         """
         self.config = bktr_config
-        # Set tensor backend according to config
-        TSR.set_params(self.config.torch_dtype, self.config.torch_device, self.config.torch_seed)
         # Assignation
-        self.spatial_distance_tensor = TSR.tensor(spatial_distance_matrix)
         self.y = TSR.tensor(y)
         self.omega = TSR.tensor(omega)
         self.tau = 1 / TSR.tensor(self.config.sigma_r)
         self._reshape_covariates(
             TSR.tensor(spatial_covariate_matrix), TSR.tensor(temporal_covariate_matrix)
         )
+        self.spatial_kernel = spatial_kernel
+        self.temporal_kernel = temporal_kernel
 
     def mcmc_sampling(self) -> dict[str, float | torch.Tensor]:
         """Launch the MCMC sampling process for a predefined number of iterations
 
-        1. Sample the spatial length scale hyperparameter
-        2. Sample the decay time scale hyperparameter
-        3. Sample the periodic length scale hyperparameter
-        4. Sample the precision matrix from a wishart distribution
-        5. Sample a new spatial covariate decomposition
-        6. Sample a new covariate decomposition
-        7. Sample a new temporal covariate decomposition
-        8. Calculate respective errors for the iterations
-        9. Sample a new tau value
-        10. Collect all the important data for the iteration
+        1. Sample spatial kernel hyperparameters
+        2. Sample temporal kernel hyperparameters
+        3. Sample the precision matrix from a wishart distribution
+        4. Sample a new spatial covariate decomposition
+        5. Sample a new covariate decomposition
+        6. Sample a new temporal covariate decomposition
+        7. Calculate respective errors for the iterations
+        8. Sample a new tau value
+        9. Collect all the important data for the iteration
 
         Returns:
             dict [str, float | torch.Tensor]: A dictionary with the MCMC sampling's results
@@ -183,23 +175,6 @@ class BKTRRegressor:
             sampled_beta_indexes=self.config.sampled_beta_indexes,
             sampled_y_indexes=self.config.sampled_y_indexes,
             results_export_dir=self.config.results_export_dir,
-            seed=self.config.torch_seed,
-        )
-
-    def _create_kernel_generators(self):
-        """Create and set the kernel generators for the spatial and temporal kernels"""
-        self.spatial_kernel_generator = SpatialKernelGenerator(
-            self.spatial_distance_tensor,
-            self.config.spatial_smoothness_factor,
-            self.config.kernel_variance,
-        )
-        self.temporal_kernel_generator = TemporalKernelGenerator(
-            self.config.temporal_kernel_fn_name,
-            self.covariates_dim['nb_times'],
-            self.config.temporal_period_length,
-            self.config.kernel_variance,
-            time_segment_duration=self.config.kernel_time_segment_duration,
-            has_stabilizing_diag=self.config.has_stabilizing_diag,
         )
 
     def _create_likelihood_evaluators(self):
@@ -226,27 +201,16 @@ class BKTRRegressor:
     def _create_hparam_samplers(self):
         """Create hyperparameter samplers
 
-        Create and set the hyperparameter samplers for the
-        spatial length scale, decay time scale, periodic length scale,
+        Create and set the hyperparameter samplers for the spatial/temporal kernel parameters,
         tau and the precision matrix
         """
-        self.spatial_length_sampler = KernelParamSampler(
-            config=self.config.spatial_length_config,
-            kernel_generator=self.spatial_kernel_generator,
+        self.spatial_params_sampler = KernelParamSampler(
+            kernel=self.spatial_kernel,
             marginal_ll_eval_fn=self._calc_spatial_marginal_ll,
-            kernel_hparam_name='spatial_length_scale',
         )
-        self.decay_scale_sampler = KernelParamSampler(
-            config=self.config.decay_scale_config,
-            kernel_generator=self.temporal_kernel_generator,
+        self.temporal_params_sampler = KernelParamSampler(
+            kernel=self.temporal_kernel,
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
-            kernel_hparam_name='decay_time_scale',
-        )
-        self.periodic_length_sampler = KernelParamSampler(
-            config=self.config.periodic_scale_config,
-            kernel_generator=self.temporal_kernel_generator,
-            marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
-            kernel_hparam_name='periodic_length_scale',
         )
 
         self.tau_sampler = TauSampler(self.config.a_0, self.config.b_0, self.omega.sum())
@@ -258,20 +222,19 @@ class BKTRRegressor:
     def _calc_spatial_marginal_ll(self):
         """Calculate the spatial marginal likelihood"""
         return self.spatial_ll_evaluator.calc_likelihood(
-            self.spatial_kernel_generator.kernel, self.temporal_decomp, self.covs_decomp, self.tau
+            self.spatial_kernel.kernel, self.temporal_decomp, self.covs_decomp, self.tau
         )
 
     def _calc_temporal_marginal_ll(self):
         """Calculate the temporal marginal likelihood"""
         return self.temporal_ll_evaluator.calc_likelihood(
-            self.temporal_kernel_generator.kernel, self.spatial_decomp, self.covs_decomp, self.tau
+            self.temporal_kernel.kernel, self.spatial_decomp, self.covs_decomp, self.tau
         )
 
     def _sample_kernel_hparam(self):
         """Sample new kernel hyperparameters"""
-        self.spatial_length_sampler.sample()
-        self.decay_scale_sampler.sample()
-        self.periodic_length_sampler.sample()
+        self.spatial_params_sampler.sample()
+        self.temporal_params_sampler.sample()
 
     def _sample_precision_wish(self):
         """Sample the precision matrix from a Wishart distribution"""
@@ -340,12 +303,9 @@ class BKTRRegressor:
     @property
     def _logged_scalar_params(self):
         """Get a dict of current iteration values needed for historical data"""
-        return {
-            'tau': float(self.tau),
-            'spatial_length': self.spatial_length_sampler.theta_value,
-            'decay_scale': self.decay_scale_sampler.theta_value,
-            'periodic_length': self.periodic_length_sampler.theta_value,
-        }
+        temporal_params = {p.full_name: p.value for p in self.temporal_kernel.parameters}
+        spatial_params = {p.full_name: p.value for p in self.spatial_kernel.parameters}
+        return {'tau': float(self.tau), **temporal_params, **spatial_params}
 
     @property
     def _decomposition_tensors(self):
@@ -367,6 +327,5 @@ class BKTRRegressor:
         """Initialize all parameters that are needed before we start the MCMC sampling"""
         self._init_covariate_decomp()
         self._create_result_logger()
-        self._create_kernel_generators()
         self._create_likelihood_evaluators()
         self._create_hparam_samplers()

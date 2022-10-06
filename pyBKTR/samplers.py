@@ -1,10 +1,10 @@
+import math
 from typing import Callable
 
 import numpy as np
 import torch
 
-from pyBKTR.kernel_generators import KernelGenerator
-from pyBKTR.sampler_config import KernelSamplerConfig
+from pyBKTR.kernel_generators import KernelGenerator, KernelParameter
 from pyBKTR.tensor_ops import TSR
 
 
@@ -16,89 +16,66 @@ class KernelParamSampler:
 
     """
 
-    __slots__ = (
-        'config',
-        'kernel_generator',
-        'marginal_ll_eval_fn',
-        'kernel_hparam_name',
-        'theta_value',
-        '_theta_min',
-        '_theta_max',
-    )
+    __slots__ = ('kernel', 'marginal_ll_eval_fn')
 
-    config: KernelSamplerConfig
-    """Kernel sampler configuration"""
-    kernel_generator: KernelGenerator
+    kernel: KernelGenerator
     """Kernel Generator used for the hyperparameter sampling process"""
     marginal_ll_eval_fn: Callable
-    """Marginal Likelihood Evaluator used in the sampling process"""
-    kernel_hparam_name: str
-    """The name used in the hyperparameter sampling process"""
-    theta_value: float
-    """Current value of Theta held by the sampler"""
-    _theta_min: float
-    _theta_max: float
 
     def __init__(
         self,
-        config: KernelSamplerConfig,
-        kernel_generator: KernelGenerator,
+        kernel: KernelGenerator,
         marginal_ll_eval_fn: Callable,
-        kernel_hparam_name: str,
     ):
-        self.config = config
-        self.kernel_generator = kernel_generator
+        self.kernel = kernel
         self.marginal_ll_eval_fn = marginal_ll_eval_fn
-        self.kernel_hparam_name = kernel_hparam_name
-        self._set_theta_value(config.hyper_mu_prior)
 
-    def _set_theta_value(self, theta: float):
-        """Set the theta value for the sampler and for its respective kernel generator
-
-        Args:
-            theta (float): _description_
-        """
-        self.theta_value = theta
-        setattr(self.kernel_generator, self.kernel_hparam_name, np.exp(theta))
-
-    def initialize_theta_bounds(self):
+    @staticmethod
+    def initialize_theta_bounds(param: KernelParameter) -> tuple[float, float]:
         """Initialize sampling bounds according to current theta value and sampling scale"""
-        theta_range = self.config.slice_sampling_scale * float(TSR.rand(1))
-        self._theta_min = max(self.theta_value - theta_range, self.config.min_hyper_value)
-        self._theta_max = min(
-            self._theta_min + self.config.slice_sampling_scale, self.config.max_hyper_value
-        )
+        theta_range = param.slice_sampling_scale * float(TSR.rand(1))
+        theta_min = max(math.log(param.value) - theta_range, param.lower_bound)
+        theta_max = min(theta_min + param.slice_sampling_scale, param.uppder_bound)
+        return theta_min, theta_max
 
-    def _prior_fn(self, theta: float) -> float:
-        """Prior likelihood function for a given hyperparameter value"""
-        return -0.5 * self.config.hyper_precision_prior * (theta - self.config.hyper_mu_prior) ** 2
+    def _prior_fn(self, param: KernelParameter) -> float:
+        """
+        Prior likelihood function for a given hyperparameter value
+        TODO Check if we should always use the same hyper mu prior from the config?
+        """
+        # return -0.5 * self.config.hypr_precision_prior * (theta - self.config.hypr_mu_prior) ** 2
+        return -0.5 * param.hparam_precision * (math.log(param.value)) ** 2
 
-    def sample_rand_theta_value(self):
+    @staticmethod
+    def sample_rand_theta_value(theta_min, theta_max):
         """Sample a random theta value within the sampling bounds"""
-        return self._theta_min + (self._theta_max - self._theta_min) * float(TSR.rand(1))
+        return theta_min + (theta_max - theta_min) * float(TSR.rand(1))
 
-    def sample(self):
+    def sample_param(self, param: KernelParameter):
         """The complete kernel hyperparameter sampling process"""
-        initial_theta = self.theta_value
-        self.initialize_theta_bounds()
-        self.kernel_generator.kernel_gen()
-        initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(self.theta_value)
-
+        theta_min, theta_max = self.initialize_theta_bounds(param)
+        initial_theta = math.log(param.value)
+        self.kernel.kernel_gen()
+        initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(param)
         density_threshold = float(TSR.rand(1))
 
         while True:
-            new_theta = self.sample_rand_theta_value()
-            self._set_theta_value(new_theta)
-            self.kernel_generator.kernel_gen()
-            new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(new_theta)
+            new_theta = self.sample_rand_theta_value(theta_min, theta_max)
+            param.value = math.exp(new_theta)
+            self.kernel.kernel_gen()
+            new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(param)
 
             marg_ll_diff = new_marginal_likelihood - initial_marginal_likelihood
             if np.exp(np.clip(marg_ll_diff, -709.78, 709.78)) > density_threshold:
-                return np.exp(new_theta)
+                return param.value
             if new_theta < initial_theta:
-                self._theta_min = new_theta
+                theta_min = new_theta
             else:
-                self._theta_max = new_theta
+                theta_max = new_theta
+
+    def sample(self):
+        for param in self.kernel.parameters:
+            self.sample_param(param)
 
 
 # TODO See if we directly use the norm multivariate from torch

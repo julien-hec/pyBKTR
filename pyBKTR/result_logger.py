@@ -29,7 +29,6 @@ class ResultLogger:
         'last_time_stamp',
         'export_path',
         'error_metrics',
-        'seed',
     ]
 
     def __init__(
@@ -42,7 +41,6 @@ class ResultLogger:
         results_export_dir: str | None = None,
         sampled_beta_indexes: list[int] = [],
         sampled_y_indexes: list[int] = [],
-        seed: int | None = None,
     ):
         # Create a tensor dictionary holding scalar data gathered through all iterations
         self.logged_params_map = defaultdict(list)
@@ -55,8 +53,6 @@ class ResultLogger:
             if not export_path.is_dir():
                 raise ValueError(f'Path {export_path} does not exists.')
             self.export_path = export_path
-
-        self.seed = seed
 
         # Create tensor that accumulate values needed for mean of evaluation
         self.sum_beta_est = TSR.zeros(covariates.shape)
@@ -184,8 +180,6 @@ class ResultLogger:
     def _get_file_name(self, file_prefix: str):
         time_now = datetime.now()
         file_name = f'{file_prefix}_{time_now:%Y%m%d_%H%M}'
-        if self.seed is not None:
-            file_name = f'{file_name}__s{self.seed}'
         return self.export_path.joinpath(f'{file_name}.csv')
 
     def log_iter_results(self):
