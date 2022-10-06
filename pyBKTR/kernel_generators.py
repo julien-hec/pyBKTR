@@ -33,7 +33,6 @@ class TemporalKernelGenerator:
         'periodic_length_scale',
         'decay_time_scale',
         '_core_kernel_fn',
-        'tsr',
         'has_stabilizing_diag',
         'time_segment_duration',
     )
@@ -49,7 +48,6 @@ class TemporalKernelGenerator:
     periodic_length_scale: float
     decay_time_scale: float
     _core_kernel_fn: Callable
-    tsr: TSR
     has_stabilizing_diag: bool
     time_segment_duration: float
 
@@ -59,7 +57,6 @@ class TemporalKernelGenerator:
         nb_time_segments: int,
         period_length: int,
         kernel_variance: float,
-        tsr_instance: TSR,
         periodic_length_scale: float = 0,
         decay_time_scale: float = 0,
         has_stabilizing_diag: bool = True,
@@ -84,7 +81,6 @@ class TemporalKernelGenerator:
             time_segment_duration (float, optional): Duration between all segments in the kernel,
                 TODO check. Defaults to 1.
         """
-        self.tsr = tsr_instance
         self._core_kernel_fn = self._get_kernel_fn(kernel_fn_name)
         self._set_time_distance_matrix(nb_time_segments, time_segment_duration)
         self.period_length = period_length
@@ -113,7 +109,7 @@ class TemporalKernelGenerator:
         """
         Create and set a time distance matrix according to the number of time segments
         """
-        time_segments = self.tsr.arange(0, nb_time_segments).unsqueeze(1) * time_segment_duration
+        time_segments = TSR.arange(0, nb_time_segments).unsqueeze(1) * time_segment_duration
         self.time_distances = time_segments - time_segments.t()
 
     def _periodic_kernel_gen(self) -> Callable:
@@ -148,9 +144,7 @@ class TemporalKernelGenerator:
         """
         self.kernel = self.kernel_variance * self._core_kernel_fn()
         if self.has_stabilizing_diag:
-            self.kernel = self.kernel + self.STAB_DIAG_MULTIPLIER * self.tsr.eye(
-                self.kernel.shape[0]
-            )
+            self.kernel = self.kernel + self.STAB_DIAG_MULTIPLIER * TSR.eye(self.kernel.shape[0])
         return self.kernel
 
 

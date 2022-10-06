@@ -5,12 +5,17 @@ import torch
 
 class TSR:
     """
-    Class containing all tensor operations used in BKTR
+    Class containing all tensor operations used in BKTR. It serves also as a factory
+    for all new tensors (giving the right type and device to each of them).
     """
 
-    def __init__(self, dtype: torch.TensorType, device: str, seed: int | None = None):
-        self.dtype = dtype
-        self.device = device
+    dtype: torch.dtype = torch.float64
+    device: str = 'cpu'
+
+    @classmethod
+    def set_params(cls, dtype: torch.TensorType, device: str, seed: int | None = None):
+        cls.dtype = dtype
+        cls.device = device
         if seed is not None:
             torch.manual_seed(seed)
 
@@ -32,26 +37,34 @@ class TSR:
             )
         return torch.reshape(torch.einsum('ac,bc->abc', [a, b]), [-1, a.shape[1]])
 
-    def tensor(self, tensor_data: Any) -> torch.Tensor:
-        return torch.tensor(tensor_data, dtype=self.dtype, device=self.device)
+    @classmethod
+    def tensor(cls, tensor_data: Any) -> torch.Tensor:
+        return torch.tensor(tensor_data, dtype=cls.dtype, device=cls.device)
 
-    def eye(self, n: int):
-        return torch.eye(n, dtype=self.dtype, device=self.device)
+    @classmethod
+    def eye(cls, n: int):
+        return torch.eye(n, dtype=cls.dtype, device=cls.device)
 
-    def ones(self, n: int | tuple[int]):
-        return torch.ones(n, dtype=self.dtype, device=self.device)
+    @classmethod
+    def ones(cls, n: int | tuple[int]):
+        return torch.ones(n, dtype=cls.dtype, device=cls.device)
 
-    def zeros(self, n: int | tuple[int]):
-        return torch.zeros(n, dtype=self.dtype, device=self.device)
+    @classmethod
+    def zeros(cls, n: int | tuple[int]):
+        return torch.zeros(n, dtype=cls.dtype, device=cls.device)
 
-    def rand(self, size: int | tuple[int]):
-        return torch.rand(size, dtype=self.dtype, device=self.device)
+    @classmethod
+    def rand(cls, size: int | tuple[int]):
+        return torch.rand(size, dtype=cls.dtype, device=cls.device)
 
-    def randn(self, size: tuple[int]) -> torch.Tensor:
-        return torch.randn(size, dtype=self.dtype, device=self.device)
+    @classmethod
+    def randn(cls, size: tuple[int]) -> torch.Tensor:
+        return torch.randn(size, dtype=cls.dtype, device=cls.device)
 
-    def randn_like(self, input_tensor: torch.Tensor):
-        return torch.randn_like(input_tensor, dtype=self.dtype, device=self.device)
+    @classmethod
+    def randn_like(cls, input_tensor: torch.Tensor):
+        return torch.randn_like(input_tensor, dtype=cls.dtype, device=cls.device)
 
-    def arange(self, start: int, end: int, step: int = 1):
-        return torch.arange(start, end, step, dtype=self.dtype, device=self.device)
+    @classmethod
+    def arange(cls, start: int, end: int, step: int = 1):
+        return torch.arange(start, end, step, dtype=cls.dtype, device=cls.device)

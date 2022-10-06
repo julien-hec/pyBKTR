@@ -34,7 +34,6 @@ class MarginalLikelihoodEvaluator:
         omega: torch.Tensor,
         y: torch.Tensor,
         is_transposed: bool,
-        tsr_instance: TSR,
     ):
         self.rank_decomp = rank_decomp
         self.nb_covariates = nb_covariates
@@ -42,7 +41,6 @@ class MarginalLikelihoodEvaluator:
         self.omega = omega
         self.axis_permutation = [1, 0] if is_transposed else [0, 1]
         self.y_masked = y * omega
-        self.tsr = tsr_instance
 
     def calc_likelihood(
         self,
@@ -81,11 +79,11 @@ class MarginalLikelihoodEvaluator:
 
         self.chol_k = torch.linalg.cholesky(kernel_values)
         kernel_inverse = torch.linalg.solve(
-            self.chol_k.t(), torch.linalg.solve(self.chol_k, self.tsr.eye(kernel_size))
+            self.chol_k.t(), torch.linalg.solve(self.chol_k, TSR.eye(kernel_size))
         )
         stabilized_kernel_inv = (kernel_inverse.t() + kernel_inverse) / 2
         self.inv_k = TSR.kronecker_prod(
-            self.tsr.eye(rank_decomp), stabilized_kernel_inv
+            TSR.eye(rank_decomp), stabilized_kernel_inv
         )  # I_R Kron inv(Ks)
 
         lambda_u = tau * torch.einsum('ijk,ilk->ijl', [psi_u_mask, psi_u_mask])  # tau * H_T * H_T'
@@ -99,9 +97,7 @@ class MarginalLikelihoodEvaluator:
             .reshape([lambda_size, lambda_size])
         )
         lambda_u = (
-            TSR.kronecker_prod(
-                self.tsr.ones([rank_decomp, rank_decomp]), self.tsr.eye(kernel_size)
-            )
+            TSR.kronecker_prod(TSR.ones([rank_decomp, rank_decomp]), TSR.eye(kernel_size))
             * lambda_u
         )
         lambda_u = lambda_u + self.inv_k
@@ -118,7 +114,7 @@ class MarginalLikelihoodEvaluator:
             (
                 0.5 * tau**2 * self.uu.t().matmul(self.uu)
                 - self.chol_lu.diag().log().sum()
-                - self.tsr.tensor(rank_decomp) * self.chol_k.diag().log().sum()
+                - TSR.tensor(rank_decomp) * self.chol_k.diag().log().sum()
             ).cpu()
         )
 

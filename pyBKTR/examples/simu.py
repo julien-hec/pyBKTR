@@ -3,6 +3,7 @@ from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.bktr_config import BKTRConfig
+from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import load_numpy_array_from_csv
 
 
@@ -10,7 +11,7 @@ class SimuBKTRRegressor(BKTRRegressor):
     def __init__(self, *args, **kwargs):
         unrelated_covariates = kwargs.pop('unrelated_covariates')
         super().__init__(*args, **kwargs)
-        unrelated_covariates = self.tsr.tensor(unrelated_covariates)
+        unrelated_covariates = TSR.tensor(unrelated_covariates)
         self.covariates = torch.dstack([self.covariates, unrelated_covariates])
         # Add a layer of randomly generated and uncorelated covariates
         self.covariates_dim['nb_covariates'] = self.covariates_dim['nb_covariates'] + 1
