@@ -156,7 +156,9 @@ class PrecisionMatrixSampler:
 
     def sample(self, covs_decomp: torch.Tensor):
         w = covs_decomp.matmul(covs_decomp.t()) + TSR.eye(self.nb_covariates)
-        wish_sigma = ((w + w.t()) * 0.5).inverse()
+        # TODO see if we can use something else than a jitter here
+        eye_jitter = TSR.eye(self.nb_covariates) * TSR.default_jitter
+        wish_sigma = ((w + w.t()) * 0.5).inverse() - eye_jitter
         wish_precision_matrix = torch.distributions.Wishart(
             df=self.wish_df, covariance_matrix=wish_sigma
         ).sample()

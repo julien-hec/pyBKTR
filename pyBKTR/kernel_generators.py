@@ -68,7 +68,7 @@ class KernelGenerator(abc.ABC):
     """
 
     kernel_variance: float
-    jitter_value: float = 1e-10
+    jitter_value: float
     distance_matrix: torch.Tensor
     parameters: list[KernelParameter] = []
     kernel: torch.Tensor
@@ -82,9 +82,10 @@ class KernelGenerator(abc.ABC):
     def _core_kernel_fn(self) -> torch.Tensor:
         pass
 
-    def __init__(self, kernel_variance: float) -> None:
+    def __init__(self, kernel_variance: float, jitter_value: float | None = 0) -> None:
         self.parameters = []
         self.kernel_variance = kernel_variance
+        self.jitter_value = TSR.default_jitter if jitter_value is None else jitter_value
 
     def kernel_gen(self) -> torch.Tensor:
         self.kernel = self.kernel_variance * self._core_kernel_fn()
@@ -106,8 +107,9 @@ class KernelSE(KernelGenerator):
         x: torch.Tensor,
         lengthscale=KernelParameter(log(2), 'lengthscale'),
         kernel_variance: float = 1,
+        jitter_value: float | None = 0,
     ) -> None:
-        super().__init__(kernel_variance)
+        super().__init__(kernel_variance, jitter_value)
         self.distance_matrix = DistanceCalculator.get_matrix(x, DIST_TYPE.LINEAR)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
@@ -127,8 +129,9 @@ class KernelPeriodic(KernelGenerator):
         lengthscale=KernelParameter(log(2), 'lengthscale'),
         period_length=KernelParameter(log(2), 'period length'),
         kernel_variance: float = 1,
+        jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance)
+        super().__init__(kernel_variance, jitter_value)
         self.distance_matrix = DistanceCalculator.get_matrix(x, DIST_TYPE.LINEAR)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
@@ -155,10 +158,11 @@ class KernelMatern(KernelGenerator):
         lengthscale=KernelParameter(log(2), 'lengthscale'),
         distance_type: DIST_TYPE.EUCLIDEAN | DIST_TYPE.HAVERSINE = DIST_TYPE.EUCLIDEAN,
         kernel_variance: float = 1,
+        jitter_value: float | None = None,
     ) -> None:
         if smoothness_factor not in {1, 3, 5}:
             raise ValueError('smoothness factor should be one of the following values 1, 3 or 5')
-        super().__init__(kernel_variance)
+        super().__init__(kernel_variance, jitter_value)
         self.smoothness_factor = smoothness_factor
         self.distance_matrix = DistanceCalculator.get_matrix(x, distance_type)
         self.lengthscale = lengthscale
@@ -195,7 +199,10 @@ class KernelComposed(KernelGenerator):
     def __init__(
         self, left_kernel: KernelGenerator, right_kernel: KernelGenerator, new_name: str
     ) -> None:
-        super().__init__(left_kernel.kernel_variance)  # TODO check if we can multiply
+        super().__init__(
+            left_kernel.kernel_variance,  # TODO check if we can multiply
+            max(left_kernel.jitter_value, right_kernel.jitter_value),
+        )
         self.left_kernel = left_kernel
         self.right_kernel = right_kernel
         self._name = new_name

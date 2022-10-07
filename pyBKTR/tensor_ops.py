@@ -13,6 +13,17 @@ class TSR:
     device: str = 'cpu'
 
     @classmethod
+    @property
+    def default_jitter(cls) -> float:
+        match cls.dtype:
+            case torch.float64:
+                return 1e-8
+            case torch.float32:
+                return 1e-5
+            case _:
+                raise ValueError('The dtype used by TSR has no default mapped jitter value')
+
+    @classmethod
     def set_params(cls, dtype: torch.TensorType, device: str, seed: int | None = None):
         cls.dtype = dtype
         cls.device = device
