@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from pyBKTR.kernel_generators import KernelGenerator, KernelMatern, KernelSE
+from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
@@ -60,9 +60,9 @@ class BKTRRegressor:
     spatial_decomp: torch.Tensor  # U
     temporal_decomp: torch.Tensor  # V
     covs_decomp: torch.Tensor  # C or W
-    # Kernel Generators
-    temporal_kernel: KernelGenerator
-    spatial_kernel: KernelGenerator
+    # Kernels
+    temporal_kernel: Kernel
+    spatial_kernel: Kernel
     # Result Logger
     result_logger: ResultLogger
     # Samplers
@@ -94,10 +94,10 @@ class BKTRRegressor:
         rank_decomp: int,
         burn_in_iter: int,
         sampling_iter: int,
-        spatial_kernel: KernelGenerator = KernelMatern(smoothness_factor=3),
+        spatial_kernel: Kernel = KernelMatern(smoothness_factor=3),
         spatial_kernel_x: None | torch.Tensor = None,
         spatial_kernel_dist: None | torch.Tensor = None,
-        temporal_kernel: KernelGenerator = KernelSE(),
+        temporal_kernel: Kernel = KernelSE(),
         temporal_kernel_x: None | torch.Tensor = None,
         temporal_kernel_dist: None | torch.Tensor = None,
         sigma_r: float = 1e-2,
@@ -117,14 +117,14 @@ class BKTRRegressor:
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`)
             sampling_iter (int): Number of sampling iterations
-            spatial_kernel (KernelGenerator, optional): Spatial kernel Used.
+            spatial_kernel (Kernel, optional): Spatial kernel Used.
                 Defaults to KernelMatern(smoothness_factor=3).
             spatial_kernel_x (None | torch.Tensor, optional): Spatial kernel input tensor
                 used to calculate covariate distance. Defaults to None.
             spatial_kernel_dist (None | torch.Tensor, optional): Spatial kernel covariate
                 distance. Can be used instead of `spatial_kernel_x` if distance is already
                 calculated. Defaults to None.
-            temporal_kernel (KernelGenerator, optional): Temporal kernel used.
+            temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
             temporal_kernel_x (None | torch.Tensor, optional): Temporal kernel input tensor
                 used to calculate covariate distance. Defaults to None.

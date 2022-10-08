@@ -4,7 +4,7 @@ from typing import Callable
 import numpy as np
 import torch
 
-from pyBKTR.kernel_generators import KernelGenerator, KernelParameter
+from pyBKTR.kernels import Kernel, KernelParameter
 from pyBKTR.tensor_ops import TSR
 
 
@@ -18,13 +18,13 @@ class KernelParamSampler:
 
     __slots__ = ('kernel', 'marginal_ll_eval_fn')
 
-    kernel: KernelGenerator
-    """Kernel Generator used for the hyperparameter sampling process"""
+    kernel: Kernel
+    """Kernel used for the hyperparameter sampling process"""
     marginal_ll_eval_fn: Callable
 
     def __init__(
         self,
-        kernel: KernelGenerator,
+        kernel: Kernel,
         marginal_ll_eval_fn: Callable,
     ):
         self.kernel = kernel

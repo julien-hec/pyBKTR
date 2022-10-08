@@ -4,7 +4,7 @@ from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.distances import DIST_TYPE
-from pyBKTR.kernel_generators import KernelMatern, KernelParameter, KernelPeriodic, KernelSE
+from pyBKTR.kernels import KernelMatern, KernelParameter, KernelPeriodic, KernelSE
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import load_numpy_array_from_csv
 

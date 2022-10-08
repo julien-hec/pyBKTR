@@ -27,7 +27,7 @@ class KernelParameter:
     """The sampling range's amplitude (Paper -- :math:`\\rho`)"""
     hparam_precision: float
     """WHAT IS THAT? TODO"""
-    kernel: KernelGenerator | None
+    kernel: Kernel | None
     """The kernel associated with the parameter (it is set at kernel instanciation)"""
 
     def __init__(
@@ -48,7 +48,7 @@ class KernelParameter:
         self.slice_sampling_scale = slice_sampling_scale
         self.hparam_precision = hparam_precision
 
-    def set_kernel(self, kernel: KernelGenerator):
+    def set_kernel(self, kernel: Kernel):
         self.kernel = kernel
         if not self.is_constant:
             self.kernel.parameters.append(self)
@@ -62,9 +62,9 @@ class KernelParameter:
         return f'{self.full_name}: {self.value}'
 
 
-class KernelGenerator(abc.ABC):
+class Kernel(abc.ABC):
     """
-    Abstract Class Template for kernel generators
+    Abstract Class Template for kernels
     """
 
     kernel_variance: float
@@ -120,7 +120,7 @@ class KernelGenerator(abc.ABC):
         return KernelComposed(self, other, f'({self._name} * {other._name})')
 
 
-class KernelSE(KernelGenerator):
+class KernelSE(Kernel):
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'Squared Exponential Kernel'
@@ -140,7 +140,7 @@ class KernelSE(KernelGenerator):
         return torch.exp(-self.distance_matrix**2 / (2 * self.lengthscale.value**2))
 
 
-class KernelRQ(KernelGenerator):
+class KernelRQ(Kernel):
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'Rational Quadratic Kernel'
@@ -165,7 +165,7 @@ class KernelRQ(KernelGenerator):
         ) ** -self.alpha.value
 
 
-class KernelPeriodic(KernelGenerator):
+class KernelPeriodic(Kernel):
     _name: str = 'Periodic Kernel'
     lengthscale: KernelParameter
     period_length: KernelParameter
@@ -192,7 +192,7 @@ class KernelPeriodic(KernelGenerator):
         )
 
 
-class KernelMatern(KernelGenerator):
+class KernelMatern(Kernel):
     _name: str = 'Matern Kernel'
     lengthscale: KernelParameter
     smoothness_factor: Literal[1, 3, 5]
@@ -215,7 +215,7 @@ class KernelMatern(KernelGenerator):
     @cached_property
     def smoothness_kernel_fn(self) -> Callable:
         """
-        Get the right kernel generator function associated with the right smoothness factor
+        Get the right kernel function associated with the right smoothness factor
         """
         match self.smoothness_factor:
             case 1:
@@ -234,15 +234,13 @@ class KernelMatern(KernelGenerator):
         return self.smoothness_kernel_fn(temp_kernel) * (-temp_kernel).exp()
 
 
-class KernelComposed(KernelGenerator):
+class KernelComposed(Kernel):
     _name: str = ''
     parameters: list = []
-    left_kernel = KernelGenerator
-    right_kernel = KernelGenerator
+    left_kernel = Kernel
+    right_kernel = Kernel
 
-    def __init__(
-        self, left_kernel: KernelGenerator, right_kernel: KernelGenerator, new_name: str
-    ) -> None:
+    def __init__(self, left_kernel: Kernel, right_kernel: Kernel, new_name: str) -> None:
         if left_kernel.distance_type != right_kernel.distance_type:
             raise RuntimeError('Composed kernel must have the same distance type')
         new_jitter_val = max(
