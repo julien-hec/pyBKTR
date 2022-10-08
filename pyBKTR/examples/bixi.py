@@ -3,7 +3,6 @@ import torch
 from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
-from pyBKTR.bktr_config import BKTRConfig
 from pyBKTR.distances import DIST_TYPE
 from pyBKTR.kernel_generators import KernelMatern, KernelParameter, KernelPeriodic, KernelSE
 from pyBKTR.tensor_ops import TSR
@@ -15,7 +14,7 @@ def run_bixi_bktr(
     run_id_from: int = 1,
     run_id_to: int = 1,
     burn_in_iter: int = 10,
-    max_iter: int = 20,
+    sampling_iter: int = 10,
     torch_seed: int | None = None,
     torch_device: str = 'cpu',
     torch_dtype: torch.dtype = torch.float32,
@@ -60,15 +59,6 @@ def run_bixi_bktr(
         min_max_normalization=True,
     )
 
-    bktr_config = BKTRConfig(
-        rank_decomp=10,
-        max_iter=max_iter,
-        burn_in_iter=burn_in_iter,
-        sampled_beta_indexes=[230, 450],
-        sampled_y_indexes=[100, 325],
-        results_export_dir=results_export_dir,
-    )
-
     spatial_kernel_x = TSR.tensor(
         load_numpy_array_from_csv(
             get_source_file_name('bike_station_features'), columns_to_keep=[2, 3]
@@ -84,15 +74,20 @@ def run_bixi_bktr(
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
-            bktr_config,
             temporal_covariate_matrix=bixi_weather_matrix,
             spatial_covariate_matrix=bixi_station_matrix,
             y=bixi_y,
             omega=bixi_omega,
+            rank_decomp=10,
+            burn_in_iter=burn_in_iter,
+            sampling_iter=sampling_iter,
             spatial_kernel=spatial_kernel,
             spatial_kernel_x=spatial_kernel_x,
             temporal_kernel=temporal_kernel,
             temporal_kernel_x=temporal_kernel_x,
+            sampled_beta_indexes=[230, 450],
+            sampled_y_indexes=[100, 325],
+            results_export_dir=results_export_dir,
         )
 
         bktr_regressor.mcmc_sampling()

@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 
-from pyBKTR.bktr_config import BKTRConfig
 from pyBKTR.kernel_generators import KernelGenerator, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.result_logger import ResultLogger
@@ -23,7 +22,6 @@ class BKTRRegressor:
     """
 
     __slots__ = [
-        'config',
         'y',
         'omega',
         'covariates',
@@ -42,8 +40,16 @@ class BKTRRegressor:
         'precision_matrix_sampler',
         'spatial_ll_evaluator',
         'temporal_ll_evaluator',
+        'rank_decomp',
+        'burn_in_iter',
+        'sampling_iter',
+        'max_iter',
+        'a_0',
+        'b_0',
+        'sampled_beta_indexes',
+        'sampled_y_indexes',
+        'results_export_dir',
     ]
-    config: BKTRConfig
     y: torch.Tensor
     omega: torch.Tensor
     covariates: torch.Tensor
@@ -67,49 +73,101 @@ class BKTRRegressor:
     # Likelihood evaluators
     spatial_ll_evaluator: MarginalLikelihoodEvaluator
     temporal_ll_evaluator: MarginalLikelihoodEvaluator
+    # Params
+    rank_decomp: int
+    burn_in_iter: int
+    sampling_iter: int
+    max_iter: int
+    a_0: float
+    b_0: float
+    # Export Params
+    sampled_beta_indexes: list[int]
+    sampled_y_indexes: list[int]
+    results_export_dir: str | None
 
     def __init__(
         self,
-        bktr_config: BKTRConfig,
         temporal_covariate_matrix: np.ndarray,
         spatial_covariate_matrix: np.ndarray,
         y: np.ndarray,
         omega: np.ndarray,
+        rank_decomp: int,
+        burn_in_iter: int,
+        sampling_iter: int,
         spatial_kernel: KernelGenerator = KernelMatern(smoothness_factor=3),
         spatial_kernel_x: None | torch.Tensor = None,
         spatial_kernel_dist: None | torch.Tensor = None,
         temporal_kernel: KernelGenerator = KernelSE(),
         temporal_kernel_x: None | torch.Tensor = None,
         temporal_kernel_dist: None | torch.Tensor = None,
+        sigma_r: float = 1e-2,
+        a_0: float = 1e-6,
+        b_0: float = 1e-6,
+        sampled_beta_indexes: list[int] = [],
+        sampled_y_indexes: list[int] = [],
+        results_export_dir: str | None = None,
     ):
         """Create a new *BKTRRegressor* object.
 
         Args:
-            bktr_config (BKTRConfig): Configuration used for the BKTR regression
             temporal_covariate_matrix (np.ndarray):  Temporal Covariates
             spatial_covariate_matrix (np.ndarray): Spatial Covariates
             y (np.ndarray): Response variable that we are trying to predict
             omega (np.ndarray): Mask showing if a y observation is missing or not
-            spatial_kernel (KernelGenerator): Spatial Kernel Used
-            spatial_kernel_x: Spatial Kernel input tensor used to calculate covariate distance
-            spatial_kernel_dist: Spatial kernel covariate distance. Use instead of
-                `temporal_kernel_x` if the distance is already calculated.
-            temporal_kernel (KernelGenerator): Temporal Kernel Used
-            temporal_kernel_x: Temporal Kernel input tensor used to calculate covariate distance
-            temporal_kernel_dist: Temporal kernel covariate distance. Use instead of
-                `temporal_kernel_x` if the distance is already calculated.
+            rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
+            burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`)
+            sampling_iter (int): Number of sampling iterations
+            spatial_kernel (KernelGenerator, optional): Spatial kernel Used.
+                Defaults to KernelMatern(smoothness_factor=3).
+            spatial_kernel_x (None | torch.Tensor, optional): Spatial kernel input tensor
+                used to calculate covariate distance. Defaults to None.
+            spatial_kernel_dist (None | torch.Tensor, optional): Spatial kernel covariate
+                distance. Can be used instead of `spatial_kernel_x` if distance is already
+                calculated. Defaults to None.
+            temporal_kernel (KernelGenerator, optional): Temporal kernel used.
+                Defaults to KernelSE().
+            temporal_kernel_x (None | torch.Tensor, optional): Temporal kernel input tensor
+                used to calculate covariate distance. Defaults to None.
+            temporal_kernel_dist (None | torch.Tensor, optional): Temporal kernel covariate
+                distance. Can be used instead of `temporal_kernel_x` if distance is already
+                calculated. Defaults to None.
+            sigma_r (float, optional): Variance of the white noise process TODO
+                (Paper -- :math:`\\tau^{-1}`). Defaults to 1e-2.
+            a_0 (float, optional): Initial value for the shape (:math:`\\alpha`) in the gamma
+                function generating tau. Defaults to 1e-6.
+            b_0 (float, optional): Initial value for the rate (:math:`\\beta`) in the gamma
+                function generating tau. Defaults to 1e-6.
+            sampled_beta_indexes (list[int], optional): Indexes of beta estimates that need
+                to be sampled through iterations. Defaults to [].
+            sampled_y_indexes (list[int], optional): Indexes of y estimates that need
+                to be sampled through iterations. Defaults to [].
+            results_export_dir (str | None, optional): Path of the folder where the csv file
+                will be exported (if None it is printed). Defaults to None.
+
+        Raises:
+            ValueError: If none or both `spatial_kernel_x` and `spatial_kernel_dist` are provided
+            ValueError: If none or both `temporal_kernel_x` and `temporal_kernel_dist` are provided
         """
-        self.config = bktr_config
-        # Assignation
+        # Param assignation
+        self.rank_decomp = rank_decomp
+        self.burn_in_iter = burn_in_iter
+        self.sampling_iter = sampling_iter
+        self.max_iter = self.burn_in_iter + self.sampling_iter
+        self.a_0 = a_0
+        self.b_0 = b_0
+        self.sampled_beta_indexes = sampled_beta_indexes
+        self.sampled_y_indexes = sampled_y_indexes
+        self.results_export_dir = results_export_dir
+        # Tensor assignation
         self.y = TSR.tensor(y)
         self.omega = TSR.tensor(omega)
-        self.tau = 1 / TSR.tensor(self.config.sigma_r)
+        self.tau = 1 / TSR.tensor(sigma_r)
         self._reshape_covariates(
             TSR.tensor(spatial_covariate_matrix), TSR.tensor(temporal_covariate_matrix)
         )
+        # Kernel assignation
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
-
         if (spatial_kernel_x is None) == (spatial_kernel_dist is None):
             raise ValueError('Either `spatial_kernel_x` or `spatial_kernel_dist` must be provided')
         if (temporal_kernel_x is None) == (temporal_kernel_dist is None):
@@ -136,7 +194,7 @@ class BKTRRegressor:
             dict [str, float | torch.Tensor]: A dictionary with the MCMC sampling's results
         """
         self._initialize_params()
-        for i in range(1, self.config.max_iter + 1):
+        for i in range(1, self.max_iter + 1):
             self._sample_kernel_hparam()
             self._sample_precision_wish()
             self._sample_spatial_decomp()
@@ -177,7 +235,7 @@ class BKTRRegressor:
 
     def _init_covariate_decomp(self):
         """Initialize CP decomposed covariate tensors with normally distributed random values"""
-        rank_decomp = self.config.rank_decomp
+        rank_decomp = self.rank_decomp
         covs_dim = self.covariates_dim
 
         self.spatial_decomp = TSR.randn([covs_dim['nb_spaces'], rank_decomp])
@@ -189,19 +247,17 @@ class BKTRRegressor:
             y=self.y,
             omega=self.omega,
             covariates=self.covariates,
-            nb_iter=self.config.max_iter,
-            nb_burn_in_iter=self.config.burn_in_iter,
-            sampled_beta_indexes=self.config.sampled_beta_indexes,
-            sampled_y_indexes=self.config.sampled_y_indexes,
-            results_export_dir=self.config.results_export_dir,
+            nb_iter=self.max_iter,
+            nb_burn_in_iter=self.burn_in_iter,
+            sampled_beta_indexes=self.sampled_beta_indexes,
+            sampled_y_indexes=self.sampled_y_indexes,
+            results_export_dir=self.results_export_dir,
         )
 
     def _create_likelihood_evaluators(self):
         """Create and set the evaluators for the spatial and the temporal likelihoods"""
-        rank_decomp = self.config.rank_decomp
-
         self.spatial_ll_evaluator = MarginalLikelihoodEvaluator(
-            rank_decomp,
+            self.rank_decomp,
             self.covariates_dim['nb_covariates'],
             self.covariates,
             self.omega,
@@ -209,7 +265,7 @@ class BKTRRegressor:
             is_transposed=False,
         )
         self.temporal_ll_evaluator = MarginalLikelihoodEvaluator(
-            rank_decomp,
+            self.rank_decomp,
             self.covariates_dim['nb_covariates'],
             self.covariates,
             self.omega,
@@ -232,10 +288,10 @@ class BKTRRegressor:
             marginal_ll_eval_fn=self._calc_temporal_marginal_ll,
         )
 
-        self.tau_sampler = TauSampler(self.config.a_0, self.config.b_0, self.omega.sum())
+        self.tau_sampler = TauSampler(self.a_0, self.b_0, self.omega.sum())
 
         self.precision_matrix_sampler = PrecisionMatrixSampler(
-            self.covariates_dim['nb_covariates'], self.config.rank_decomp
+            self.covariates_dim['nb_covariates'], self.rank_decomp
         )
 
     def _calc_spatial_marginal_ll(self):
@@ -292,7 +348,7 @@ class BKTRRegressor:
             self.spatial_decomp,
             self.temporal_decomp,
             self.covariates,
-            self.config.rank_decomp,
+            self.rank_decomp,
             self.omega,
             self.tau,
             self.y,

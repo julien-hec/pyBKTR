@@ -2,7 +2,6 @@ import torch
 from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
-from pyBKTR.bktr_config import BKTRConfig
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import load_numpy_array_from_csv
 
@@ -21,7 +20,7 @@ def run_simu_bktr(
     results_export_dir: str,
     nb_runs: int = 1,
     burn_in_iter: int = 1000,
-    max_iter: int = 1500,
+    sampling_iter: int = 500,
     torch_seed: int | None = None,
     torch_device: str = 'cpu',
     torch_dtype: torch.dtype = torch.float64,
@@ -29,15 +28,6 @@ def run_simu_bktr(
 
     # Set tensor backend according to config
     TSR.set_params(torch_dtype, torch_device, torch_seed)
-
-    bktr_config = BKTRConfig(
-        rank_decomp=10,
-        max_iter=max_iter,
-        burn_in_iter=burn_in_iter,
-        sampled_beta_indexes=[860, 1949, 5519, 6338, 9207, 10435, 15034, 15868, 16059, 16944],
-        sampled_y_indexes=[52, 4046, 12979, 13129, 15673, 17807],
-        results_export_dir=results_export_dir,
-    )
 
     def get_source_file_name(csv_name: str) -> str:
         return resource_stream(__name__, f'../data/{csv_name}.csv')
@@ -65,13 +55,18 @@ def run_simu_bktr(
     for i in range(1, nb_runs + 1):
         TSR.set_params(torch_dtype, torch_device, torch_seed * i)
         bktr_regressor = SimuBKTRRegressor(
-            bktr_config,
             temporal_covariate_matrix=temporal_covariates,
             spatial_covariate_matrix=spatial_covariates,
             y=y_full_matrix,
             omega=omega,
             unrelated_covariates=unrelated_covariates,
+            rank_decomp=10,
+            burn_in_iter=burn_in_iter,
+            sampling_iter=sampling_iter,
             spatial_kernel_dist=TSR.tensor(distance_matrix),
             temporal_kernel_x=temporal_kernel_x,
+            sampled_beta_indexes=[860, 1949, 5519, 6338, 9207, 10435, 15034, 15868, 16059, 16944],
+            sampled_y_indexes=[52, 4046, 12979, 13129, 15673, 17807],
+            results_export_dir=results_export_dir,
         )
         bktr_regressor.mcmc_sampling()
