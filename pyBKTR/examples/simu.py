@@ -3,8 +3,6 @@ from pkg_resources import resource_stream
 
 from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.bktr_config import BKTRConfig
-from pyBKTR.distances import DIST_TYPE
-from pyBKTR.kernel_generators import KernelMatern, KernelSE
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import load_numpy_array_from_csv
 
@@ -28,6 +26,9 @@ def run_simu_bktr(
     torch_device: str = 'cpu',
     torch_dtype: torch.dtype = torch.float64,
 ) -> None:
+
+    # Set tensor backend according to config
+    TSR.set_params(torch_dtype, torch_device, torch_seed)
 
     bktr_config = BKTRConfig(
         rank_decomp=10,
@@ -60,11 +61,6 @@ def run_simu_bktr(
 
     time_resolution = 1 / 10
     temporal_kernel_x = TSR.arange(0, temporal_covariates.shape[0]) * time_resolution
-    temporal_kernel = KernelSE(temporal_kernel_x)
-    spatial_kernel = KernelMatern(
-        TSR.tensor([0, 1]), smoothness_factor=3, distance_type=DIST_TYPE.LINEAR
-    )  # TODO get x vector
-    spatial_kernel.distance_matrix = TSR.tensor(distance_matrix)
 
     for i in range(1, nb_runs + 1):
         TSR.set_params(torch_dtype, torch_device, torch_seed * i)
@@ -74,8 +70,8 @@ def run_simu_bktr(
             spatial_covariate_matrix=spatial_covariates,
             y=y_full_matrix,
             omega=omega,
-            spatial_kernel=spatial_kernel,
-            temporal_kernel=temporal_kernel,
             unrelated_covariates=unrelated_covariates,
+            spatial_kernel_dist=TSR.tensor(distance_matrix),
+            temporal_kernel_x=temporal_kernel_x,
         )
         bktr_regressor.mcmc_sampling()

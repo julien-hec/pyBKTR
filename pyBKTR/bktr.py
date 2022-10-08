@@ -2,7 +2,7 @@ import numpy as np
 import torch
 
 from pyBKTR.bktr_config import BKTRConfig
-from pyBKTR.kernel_generators import KernelGenerator
+from pyBKTR.kernel_generators import KernelGenerator, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
 from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
@@ -75,8 +75,12 @@ class BKTRRegressor:
         spatial_covariate_matrix: np.ndarray,
         y: np.ndarray,
         omega: np.ndarray,
-        temporal_kernel: KernelGenerator,
-        spatial_kernel: KernelGenerator,
+        spatial_kernel: KernelGenerator = KernelMatern(smoothness_factor=3),
+        spatial_kernel_x: None | torch.Tensor = None,
+        spatial_kernel_dist: None | torch.Tensor = None,
+        temporal_kernel: KernelGenerator = KernelSE(),
+        temporal_kernel_x: None | torch.Tensor = None,
+        temporal_kernel_dist: None | torch.Tensor = None,
     ):
         """Create a new *BKTRRegressor* object.
 
@@ -86,8 +90,14 @@ class BKTRRegressor:
             spatial_covariate_matrix (np.ndarray): Spatial Covariates
             y (np.ndarray): Response variable that we are trying to predict
             omega (np.ndarray): Mask showing if a y observation is missing or not
-            temporal_kernel (KernelGenerator): Temporal Kernel Used
             spatial_kernel (KernelGenerator): Spatial Kernel Used
+            spatial_kernel_x: Spatial Kernel input tensor used to calculate covariate distance
+            spatial_kernel_dist: Spatial kernel covariate distance. Use instead of
+                `temporal_kernel_x` if the distance is already calculated.
+            temporal_kernel (KernelGenerator): Temporal Kernel Used
+            temporal_kernel_x: Temporal Kernel input tensor used to calculate covariate distance
+            temporal_kernel_dist: Temporal kernel covariate distance. Use instead of
+                `temporal_kernel_x` if the distance is already calculated.
         """
         self.config = bktr_config
         # Assignation
@@ -99,6 +109,15 @@ class BKTRRegressor:
         )
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
+
+        if (spatial_kernel_x is None) == (spatial_kernel_dist is None):
+            raise ValueError('Either `spatial_kernel_x` or `spatial_kernel_dist` must be provided')
+        if (temporal_kernel_x is None) == (temporal_kernel_dist is None):
+            raise ValueError(
+                'Either `temporal_kernel_x` or `temporal_kernel_dist` must be provided'
+            )
+        self.spatial_kernel.set_distance_matrix(spatial_kernel_x, spatial_kernel_dist)
+        self.temporal_kernel.set_distance_matrix(temporal_kernel_x, temporal_kernel_dist)
 
     def mcmc_sampling(self) -> dict[str, float | torch.Tensor]:
         """Launch the MCMC sampling process for a predefined number of iterations

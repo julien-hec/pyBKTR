@@ -18,7 +18,7 @@ def run_bixi_bktr(
     max_iter: int = 20,
     torch_seed: int | None = None,
     torch_device: str = 'cpu',
-    torch_dtype: torch.dtype = torch.float64,
+    torch_dtype: torch.dtype = torch.float32,
 ) -> None:
 
     # Set tensor backend according to config
@@ -76,12 +76,11 @@ def run_bixi_bktr(
     )
     temporal_kernel_x = TSR.arange(0, bixi_weather_matrix.shape[0])
 
-    temporal_kernel = KernelPeriodic(
-        temporal_kernel_x, period_length=KernelParameter(7, 'period length', is_constant=True)
-    ) * KernelSE(temporal_kernel_x)
-    spatial_kernel = KernelMatern(
-        spatial_kernel_x, smoothness_factor=3, distance_type=DIST_TYPE.HAVERSINE
+    temporal_kernel = (
+        KernelPeriodic(period_length=KernelParameter(7, 'period length', is_constant=True))
+        * KernelSE()
     )
+    spatial_kernel = KernelMatern(smoothness_factor=3, distance_type=DIST_TYPE.HAVERSINE)
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
@@ -90,8 +89,10 @@ def run_bixi_bktr(
             spatial_covariate_matrix=bixi_station_matrix,
             y=bixi_y,
             omega=bixi_omega,
-            temporal_kernel=temporal_kernel,
             spatial_kernel=spatial_kernel,
+            spatial_kernel_x=spatial_kernel_x,
+            temporal_kernel=temporal_kernel,
+            temporal_kernel_x=temporal_kernel_x,
         )
 
         bktr_regressor.mcmc_sampling()

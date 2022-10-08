@@ -68,10 +68,11 @@ class KernelGenerator(abc.ABC):
     """
 
     kernel_variance: float
-    jitter_value: float
-    distance_matrix: torch.Tensor
+    jitter_value: float | None
+    distance_matrix: torch.Tensor | None
     parameters: list[KernelParameter] = []
     kernel: torch.Tensor
+    distance_type: type[DIST_TYPE]
 
     @property
     @abc.abstractmethod
@@ -82,16 +83,36 @@ class KernelGenerator(abc.ABC):
     def _core_kernel_fn(self) -> torch.Tensor:
         pass
 
-    def __init__(self, kernel_variance: float, jitter_value: float | None = 0) -> None:
+    def __init__(
+        self, kernel_variance: float, distance_type: type[DIST_TYPE], jitter_value: float | None
+    ) -> None:
         self.parameters = []
         self.kernel_variance = kernel_variance
-        self.jitter_value = TSR.default_jitter if jitter_value is None else jitter_value
+        self.distance_type = distance_type
+        self.jitter_value = jitter_value
+
+    def add_jitter_to_kernel(self):
+        if self.jitter_value == 0:
+            return
+        jitter_val = TSR.default_jitter if self.jitter_value is None else self.jitter_value
+        self.kernel += jitter_val * TSR.eye(self.kernel.shape[0])
 
     def kernel_gen(self) -> torch.Tensor:
+        if self.distance_matrix is None:
+            raise RuntimeError(
+                'Set kernel distance via `set_distance_matrix` before kernel evaluation.'
+            )
         self.kernel = self.kernel_variance * self._core_kernel_fn()
-        if self.jitter_value > 0:
-            self.kernel += self.jitter_value * TSR.eye(self.kernel.shape[0])
+        self.add_jitter_to_kernel()
         return self.kernel
+
+    def set_distance_matrix(self, x: None | torch.Tensor, distance_matrix: None | torch.Tensor):
+        if (x is None) == (distance_matrix is None):
+            raise ValueError('Either `x` or `distance_matrix` must be provided')
+        elif x is not None:
+            self.distance_matrix = DistanceCalculator.get_matrix(x, self.distance_type)
+        else:
+            self.distance_matrix = distance_matrix
 
     def __mul__(self, other) -> KernelComposed:
         return KernelComposed(self, other, f'({self._name} * {other._name})')
@@ -104,13 +125,12 @@ class KernelSE(KernelGenerator):
 
     def __init__(
         self,
-        x: torch.Tensor,
         lengthscale=KernelParameter(log(2), 'lengthscale'),
         kernel_variance: float = 1,
-        jitter_value: float | None = 0,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, jitter_value)
-        self.distance_matrix = DistanceCalculator.get_matrix(x, DIST_TYPE.LINEAR)
+        super().__init__(kernel_variance, distance_type, jitter_value)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
 
@@ -125,14 +145,13 @@ class KernelPeriodic(KernelGenerator):
 
     def __init__(
         self,
-        x: torch.Tensor,
         lengthscale=KernelParameter(log(2), 'lengthscale'),
         period_length=KernelParameter(log(2), 'period length'),
         kernel_variance: float = 1,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, jitter_value)
-        self.distance_matrix = DistanceCalculator.get_matrix(x, DIST_TYPE.LINEAR)
+        super().__init__(kernel_variance, distance_type, jitter_value)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
         self.period_length = period_length
@@ -153,18 +172,16 @@ class KernelMatern(KernelGenerator):
 
     def __init__(
         self,
-        x: torch.Tensor,
         smoothness_factor: Literal[1, 3, 5],
         lengthscale=KernelParameter(log(2), 'lengthscale'),
-        distance_type: DIST_TYPE.EUCLIDEAN | DIST_TYPE.HAVERSINE = DIST_TYPE.EUCLIDEAN,
         kernel_variance: float = 1,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
         if smoothness_factor not in {1, 3, 5}:
             raise ValueError('smoothness factor should be one of the following values 1, 3 or 5')
-        super().__init__(kernel_variance, jitter_value)
+        super().__init__(kernel_variance, distance_type, jitter_value)
         self.smoothness_factor = smoothness_factor
-        self.distance_matrix = DistanceCalculator.get_matrix(x, distance_type)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
 
@@ -199,9 +216,16 @@ class KernelComposed(KernelGenerator):
     def __init__(
         self, left_kernel: KernelGenerator, right_kernel: KernelGenerator, new_name: str
     ) -> None:
+        if left_kernel.distance_type != right_kernel.distance_type:
+            raise RuntimeError('Composed kernel must have the same distance type')
+        new_jitter_val = max(
+            left_kernel.jitter_value or TSR.default_jitter,
+            right_kernel.jitter_value or TSR.default_jitter,
+        )
         super().__init__(
             left_kernel.kernel_variance,  # TODO check if we can multiply
-            max(left_kernel.jitter_value, right_kernel.jitter_value),
+            left_kernel.distance_type,
+            new_jitter_val,
         )
         self.left_kernel = left_kernel
         self.right_kernel = right_kernel
@@ -210,3 +234,8 @@ class KernelComposed(KernelGenerator):
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return self.left_kernel._core_kernel_fn() * self.right_kernel._core_kernel_fn()
+
+    def set_distance_matrix(self, x: None | torch.Tensor, distance_matrix: None | torch.Tensor):
+        super().set_distance_matrix(x, distance_matrix)
+        self.left_kernel.set_distance_matrix(x, distance_matrix)
+        self.right_kernel.set_distance_matrix(x, distance_matrix)
