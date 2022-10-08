@@ -106,7 +106,9 @@ class KernelGenerator(abc.ABC):
         self.add_jitter_to_kernel()
         return self.kernel
 
-    def set_distance_matrix(self, x: None | torch.Tensor, distance_matrix: None | torch.Tensor):
+    def set_distance_matrix(
+        self, x: None | torch.Tensor = None, distance_matrix: None | torch.Tensor = None
+    ):
         if (x is None) == (distance_matrix is None):
             raise ValueError('Either `x` or `distance_matrix` must be provided')
         elif x is not None:
@@ -136,6 +138,31 @@ class KernelSE(KernelGenerator):
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return torch.exp(-self.distance_matrix**2 / (2 * self.lengthscale.value**2))
+
+
+class KernelRQ(KernelGenerator):
+    lengthscale: KernelParameter
+    distance_matrix: torch.Tensor
+    _name: str = 'Rational Quadratic Kernel'
+
+    def __init__(
+        self,
+        lengthscale=KernelParameter(log(2), 'lengthscale'),
+        alpha=KernelParameter(log(2), 'alpha'),
+        kernel_variance: float = 1,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        jitter_value: float | None = None,
+    ) -> None:
+        super().__init__(kernel_variance, distance_type, jitter_value)
+        self.lengthscale = lengthscale
+        self.lengthscale.set_kernel(self)
+        self.alpha = alpha
+        self.alpha.set_kernel(self)
+
+    def _core_kernel_fn(self) -> torch.Tensor:
+        return (
+            1 + self.distance_matrix**2 / (2 * self.alpha.value * self.lengthscale.value**2)
+        ) ** -self.alpha.value
 
 
 class KernelPeriodic(KernelGenerator):
