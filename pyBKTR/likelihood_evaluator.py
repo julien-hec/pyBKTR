@@ -87,20 +87,12 @@ class MarginalLikelihoodEvaluator:
         )  # I_R Kron inv(Ks)
 
         lambda_u = tau * torch.einsum('ijk,ilk->ijl', [psi_u_mask, psi_u_mask])  # tau * H_T * H_T'
-        # TODO Check broadcasting here, we can simplify it (We just want to diagonalize lambda_u)
         lambda_u = (
-            lambda_u.permute([1, 0, 2])
-            .flatten(start_dim=0, end_dim=1)
-            .unsqueeze(1)
-            .expand([-1, kernel_size, -1])
-            .permute([0, 2, 1])
-            .reshape([lambda_size, lambda_size])
+            (lambda_u.transpose(0, -1).unsqueeze(-1) * TSR.eye(kernel_size))
+            .transpose(1, 2)
+            .reshape(lambda_size, lambda_size)
         )
-        lambda_u = (
-            TSR.kronecker_prod(TSR.ones([rank_decomp, rank_decomp]), TSR.eye(kernel_size))
-            * lambda_u
-        )
-        lambda_u = lambda_u + self.inv_k
+        lambda_u += self.inv_k
 
         self.chol_lu = torch.linalg.cholesky(lambda_u)
         self.uu = torch.linalg.solve_triangular(
