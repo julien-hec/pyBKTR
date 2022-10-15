@@ -17,7 +17,6 @@ class ResultLogger:
         'covariates',
         'nb_iter',
         'nb_burn_in_iter',
-        'export_dir',
         'results_export_dir',
         'sampled_beta_indexes',
         'sampled_y_indexes',
@@ -47,7 +46,7 @@ class ResultLogger:
 
         # Set export dir
         if results_export_dir is None:
-            self.export_dir = None
+            self.export_path = None
         else:
             export_path = Path(results_export_dir)
             if not export_path.is_dir():
