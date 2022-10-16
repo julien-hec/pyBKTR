@@ -23,6 +23,7 @@ class ResultLogger:
         'logged_params_map',
         'beta_estimates',
         'y_estimates',
+        'total_elapsed_time',
         'sum_beta_est',
         'sum_y_est',
         'last_time_stamp',
@@ -53,9 +54,10 @@ class ResultLogger:
                 raise ValueError(f'Path {export_path} does not exists.')
             self.export_path = export_path
 
-        # Create tensor that accumulate values needed for mean of evaluation
+        # Create tensors that accumulate values needed for estimates
         self.sum_beta_est = TSR.zeros(covariates.shape)
         self.sum_y_est = TSR.zeros(y.shape)
+        self.total_elapsed_time = 0
 
         self.y = y
         self.omega = omega
@@ -100,6 +102,7 @@ class ResultLogger:
 
     def _get_elapsed_time_dict(self):
         iter_elapsed_time = time() - self.last_time_stamp
+        self.total_elapsed_time += iter_elapsed_time
         self.last_time_stamp = time()
         return {'elapsed_time': iter_elapsed_time}
 
@@ -157,8 +160,8 @@ class ResultLogger:
         formated_results = [f'{k.replace("_", " ")} is {v:.4f}' for k, v in result_dict.items()]
         print(f'** Result for iter {iter:<4} : {" || ".join(formated_results)} **')
 
-    def _get_avg_estimates(self) -> dict[str, float | torch.Tensor]:
-        """Calculate the final dictionary of values returned by the MCMC sampling
+    def _get_and_print_avg_estimates(self) -> dict[str, float | torch.Tensor]:
+        """Calculate the final dictionary of values returned by the MCMC sampling and print them
 
         The final values include the y estimation, the average estimated betas and the errors
 
@@ -169,7 +172,8 @@ class ResultLogger:
         self.beta_estimates = self.sum_beta_est / nb_after_burn_in_iter
         self.y_estimates = self.sum_y_est / nb_after_burn_in_iter
         error_metrics = self._set_error_metrics()
-        self._print_iter_result(-1, error_metrics)
+        iters_summary_dict = {'elapsed_time': self.total_elapsed_time} | error_metrics
+        self._print_iter_result('TOTAL', iters_summary_dict)
         return {
             'y_est': self.y_estimates,
             'beta_est': self.beta_estimates,
@@ -183,10 +187,8 @@ class ResultLogger:
 
     def log_iter_results(self):
         iter_results_df = pd.DataFrame.from_dict(self.logged_params_map)
-        avg_estimates = self._get_avg_estimates()
-        if self.export_path is None:
-            print(iter_results_df)
-        else:
+        avg_estimates = self._get_and_print_avg_estimates()
+        if self.export_path is not None:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
             y_est = avg_estimates['y_est'].cpu().flatten()
             beta_est = avg_estimates['beta_est'].cpu().flatten()

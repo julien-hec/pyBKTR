@@ -78,11 +78,10 @@ class KernelParamSampler:
             self.sample_param(param)
 
 
-# TODO See if we directly use the norm multivariate from torch
 def sample_norm_multivariate(
     mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor
 ) -> torch.Tensor:
-    """_summary_
+    """Sample a vector from a normal multivariate distribution
 
     Args:
         mean_vec (torch.Tensor): A vector of normal distribution means
