@@ -79,3 +79,14 @@ class TSR:
     @classmethod
     def arange(cls, start: int, end: int, step: int = 1):
         return torch.arange(start, end, step, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def get_tensor_or_none(cls, input_tensor: torch.Tensor | None) -> torch.Tensor | None:
+        """Util function to get none if a value is none or a tensor instance of the value.
+
+        Args:
+            input_tensor (torch.Tensor | None): Input Tensor
+        """
+        if input_tensor is None:
+            return None
+        return cls.tensor(input_tensor)

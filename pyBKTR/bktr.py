@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 import torch
 
@@ -110,26 +112,34 @@ class BKTRRegressor:
         """Create a new *BKTRRegressor* object.
 
         Args:
-            temporal_covariate_matrix (np.ndarray):  Temporal Covariates
-            spatial_covariate_matrix (np.ndarray): Spatial Covariates
-            y (np.ndarray): Response variable that we are trying to predict
-            omega (np.ndarray): Mask showing if a y observation is missing or not
+            spatial_covariate_matrix (np.ndarray | torch.Tensor): Spatial Covariates. A
+                two dimension matrix (nb spatial points x nb spatial covariates).
+            temporal_covariate_matrix (np.ndarray | torch.Tensor):  Temporal Covariates. A
+                two dimension matrix (nb temporal points x nb temporal covariates).
+            y (np.ndarray | torch.Tensor): Response variable (`Y`). Variable that we want to
+                predict. A two dimensions matrix (nb spatial points x nb spatial points).
+            omega (np.ndarray | torch.Tensor): Mask showing if a y observation is missing or
+                not. A two dimensions matrix (nb spatial points x nb temporal points).
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
-            burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`)
-            sampling_iter (int): Number of sampling iterations
+            burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
+            sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
             spatial_kernel (Kernel, optional): Spatial kernel Used.
                 Defaults to KernelMatern(smoothness_factor=3).
-            spatial_kernel_x (None | torch.Tensor, optional): Spatial kernel input tensor
-                used to calculate covariate distance. Defaults to None.
-            spatial_kernel_dist (None | torch.Tensor, optional): Spatial kernel covariate
-                distance. Can be used instead of `spatial_kernel_x` if distance is already
+            spatial_kernel_x (None | np.ndarray | torch.Tensor, optional): Spatial kernel input
+                tensor used to calculate covariate distance. Vector of length equal to nb
+                spatial points. Defaults to None.
+            spatial_kernel_dist (None | np.ndarray | torch.Tensor, optional): Spatial kernel
+                covariate distance. A two dimensions matrix (nb spatial points x nb spatial
+                points).  Should be used instead of `spatial_kernel_x` if distance was already
                 calculated. Defaults to None.
             temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
             temporal_kernel_x (None | torch.Tensor, optional): Temporal kernel input tensor
-                used to calculate covariate distance. Defaults to None.
+                used to calculate covariate distance. Vector of length equal to nb temporal
+                points. Defaults to None.
             temporal_kernel_dist (None | torch.Tensor, optional): Temporal kernel covariate
-                distance. Can be used instead of `temporal_kernel_x` if distance is already
+                distance. A two dimensions matrix (nb temporal points x nb temporal points).
+                Should be used instead of `temporal_kernel_x` if distance was already
                 calculated. Defaults to None.
             sigma_r (float, optional): Variance of the white noise process TODO
                 (Paper -- :math:`\\tau^{-1}`). Defaults to 1e-2.
@@ -147,7 +157,35 @@ class BKTRRegressor:
         Raises:
             ValueError: If none or both `spatial_kernel_x` and `spatial_kernel_dist` are provided
             ValueError: If none or both `temporal_kernel_x` and `temporal_kernel_dist` are provided
+            ValueError: If `y` or `omega` first dimension's length are different than
+                `spatial_covariate_matrix` first dimension
+            ValueError: If `y` or `omega` second dimension's length are different than
+                `temporal_covariate_matrix` first dimension
         """
+
+        # Tensor assignation
+        self.y = TSR.tensor(y)
+        self.omega = TSR.tensor(omega)
+        spatial_covariates = TSR.tensor(spatial_covariate_matrix)
+        temporal_covariates = TSR.tensor(temporal_covariate_matrix)
+        self.tau = 1 / TSR.tensor(sigma_r)
+        temporal_kernel_x_tsr = TSR.get_tensor_or_none(temporal_kernel_x)
+        temporal_kernel_dist_tsr = TSR.get_tensor_or_none(temporal_kernel_dist)
+        spatial_kernel_x_tsr = TSR.get_tensor_or_none(spatial_kernel_x)
+        spatial_kernel_dist_tsr = TSR.get_tensor_or_none(spatial_kernel_dist)
+
+        # Verify input dimensions
+        self._verify_input_dimensions(
+            y,
+            omega,
+            spatial_covariates,
+            temporal_covariates,
+            spatial_kernel_x_tsr,
+            spatial_kernel_dist_tsr,
+            temporal_kernel_x_tsr,
+            temporal_kernel_dist_tsr,
+        )
+
         # Param assignation
         self.rank_decomp = rank_decomp
         self.burn_in_iter = burn_in_iter
@@ -158,22 +196,13 @@ class BKTRRegressor:
         self.sampled_beta_indexes = sampled_beta_indexes
         self.sampled_y_indexes = sampled_y_indexes
         self.results_export_dir = results_export_dir
-        # Tensor assignation
-        self.y = TSR.tensor(y)
-        self.omega = TSR.tensor(omega)
-        self.tau = 1 / TSR.tensor(sigma_r)
-        self._reshape_covariates(
-            TSR.tensor(spatial_covariate_matrix), TSR.tensor(temporal_covariate_matrix)
-        )
+
+        # Reshape covariates
+        self._reshape_covariates(spatial_covariates, temporal_covariates)
+
         # Kernel assignation
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
-        if (spatial_kernel_x is None) == (spatial_kernel_dist is None):
-            raise ValueError('Either `spatial_kernel_x` or `spatial_kernel_dist` must be provided')
-        if (temporal_kernel_x is None) == (temporal_kernel_dist is None):
-            raise ValueError(
-                'Either `temporal_kernel_x` or `temporal_kernel_dist` must be provided'
-            )
         self.spatial_kernel.set_distance_matrix(spatial_kernel_x, spatial_kernel_dist)
         self.temporal_kernel.set_distance_matrix(temporal_kernel_x, temporal_kernel_dist)
 
@@ -203,6 +232,102 @@ class BKTRRegressor:
             self._set_errors_and_sample_precision_tau()
             self._collect_iter_values(i)
         return self._log_iter_results()
+
+    @property
+    def beta_estimates(self):
+        if self.result_logger is None:
+            raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
+        return self.result_logger.beta_estimates
+
+    @property
+    def y_estimates(self):
+        if self.result_logger is None:
+            raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
+        return self.result_logger.y_estimates
+
+    @staticmethod
+    def _verify_kernel_inputs(
+        kernel_x: torch.Tensor | None,
+        kernel_dist: torch.Tensor | None,
+        nb_input_points: int,
+        kernel_type: Literal['spatial', 'temporal'],
+    ):
+        """Verify if kernel inputs are valid and align with covariates dimension.
+
+        Args:
+            kernel_x (torch.Tensor | None): Kernel x to be provided to a kernel.
+            kernel_dist (torch.Tensor | None): Kernel distance to be provided to kernel.
+            nb_input_points (int): Number of spatial/temporal points in covariates.
+            kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): Type of kernel.
+
+        Raises:
+            ValueError: If kernel both or none of kernel_x and kernel_dist are provided.
+            ValueError: If kernel_x is provided and its size is not appropriate.
+            ValueError: If kernel_dist is provided and its size is not appropriate.
+        """
+        if (kernel_x is None) == (kernel_dist is None):
+            raise ValueError(
+                'Either `{kernel_type}_kernel_x` or `{kernel_type}_kernel_dist` must be provided'
+            )
+        if kernel_x is not None and nb_input_points != kernel_x.shape[0]:
+            raise ValueError(
+                f'`{kernel_type}_kernel_x` first input dimension must have the same'
+                f' length as the number of {kernel_type} points.'
+            )
+        if kernel_dist is not None and not (
+            nb_input_points == kernel_dist.shape[0] == kernel_dist.shape[1]
+        ):
+            raise ValueError(
+                f'`{kernel_type}_kernel_dist` first and second input dimensions must have the same'
+                f' length as the number of {kernel_type} points.'
+            )
+
+    @classmethod
+    def _verify_input_dimensions(
+        cls,
+        y: torch.Tensor,
+        omega: torch.Tensor,
+        spatial_covariates: torch.Tensor,
+        temporal_covariates: torch.Tensor,
+        spatial_kernel_x: torch.Tensor | None,
+        spatial_kernel_dist: torch.Tensor | None,
+        temporal_kernel_x: torch.Tensor | None,
+        temporal_kernel_dist: torch.Tensor | None,
+    ):
+        """Verify the validity of BKTR tensor inputs' dimensions
+
+        Args:
+            y (torch.Tensor): y in __init__
+            omega (torch.Tensor):  omega in __init__
+            spatial_covariates (torch.Tensor): spatial_covariates in __init__
+            temporal_covariates (torch.Tensor): temporal_covariates in __init__
+            spatial_kernel_x (torch.Tensor | None): spatial_kernel_x in __init__
+            spatial_kernel_dist (torch.Tensor | None): spatial_kernel_dist in __init__
+            temporal_kernel_x (torch.Tensor | None): temporal_kernel_x in __init__
+            temporal_kernel_dist (torch.Tensor | None): temporal_kernel_dist in __init__
+
+        Raises:
+            ValueError: If omega and y do not respect the dimension of spatial covariates
+            ValueError: If omega and y do not respect the dimension of temporal covariates
+        """
+        nb_spatial_points = spatial_covariates.shape[0]
+        nb_temporal_points = temporal_covariates.shape[0]
+        if not (nb_spatial_points == omega.shape[0] == y.shape[0]):
+            raise ValueError(
+                'Y and omega matrices should have first dimensions of same length'
+                ' as the first dimension of the spatial covariate matrix'
+            )
+        if not (nb_temporal_points == omega.shape[1] == y.shape[1]):
+            raise ValueError(
+                'Y and omega matrices should have second dimensions of same length'
+                ' as the first dimension of the temporal covariate matrix'
+            )
+        cls._verify_kernel_inputs(
+            spatial_kernel_x, spatial_kernel_dist, nb_spatial_points, 'spatial'
+        )
+        cls._verify_kernel_inputs(
+            temporal_kernel_x, temporal_kernel_dist, nb_temporal_points, 'temporal'
+        )
 
     def _reshape_covariates(
         self, spatial_covariate_tensor: torch.Tensor, temporal_covariate_tensor: torch.Tensor
