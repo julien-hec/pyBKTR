@@ -22,9 +22,11 @@ class ResultLogger:
         'sampled_y_indexes',
         'logged_params_map',
         'beta_estimates',
+        'beta_stdev',
         'y_estimates',
         'total_elapsed_time',
         'sum_beta_est',
+        'sum_sq_beta_est',
         'sum_y_est',
         'last_time_stamp',
         'export_path',
@@ -56,6 +58,7 @@ class ResultLogger:
 
         # Create tensors that accumulate values needed for estimates
         self.sum_beta_est = TSR.zeros(covariates.shape)
+        self.sum_sq_beta_est = TSR.zeros(covariates.shape)
         self.sum_y_est = TSR.zeros(y.shape)
         self.total_elapsed_time = 0
 
@@ -84,6 +87,7 @@ class ResultLogger:
 
         if iter > self.nb_burn_in_iter:
             self.sum_beta_est += self.beta_estimates
+            self.sum_sq_beta_est += self.beta_estimates**2
             self.sum_y_est += self.y_estimates
 
         total_logged_params = {
@@ -170,6 +174,9 @@ class ResultLogger:
         """
         nb_after_burn_in_iter = self.nb_iter - self.nb_burn_in_iter
         self.beta_estimates = self.sum_beta_est / nb_after_burn_in_iter
+        self.beta_stdev = (
+            (self.sum_sq_beta_est / nb_after_burn_in_iter) - self.beta_estimates**2
+        ).sqrt()
         self.y_estimates = self.sum_y_est / nb_after_burn_in_iter
         error_metrics = self._set_error_metrics()
         iters_summary_dict = {'elapsed_time': self.total_elapsed_time} | error_metrics

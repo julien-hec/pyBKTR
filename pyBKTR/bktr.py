@@ -240,6 +240,12 @@ class BKTRRegressor:
         return self.result_logger.beta_estimates
 
     @property
+    def beta_stdev(self):
+        if self.result_logger is None:
+            raise RuntimeError('Beta standard dev can only be accessed after MCMC sampling.')
+        return self.result_logger.beta_stdev
+
+    @property
     def y_estimates(self):
         if self.result_logger is None:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
