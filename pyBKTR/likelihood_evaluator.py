@@ -34,7 +34,6 @@ class MarginalLikelihoodEvaluator:
         omega: torch.Tensor,
         y: torch.Tensor,
         is_transposed: bool,
-        tsr_instance: TSR,
     ):
         self.rank_decomp = rank_decomp
         self.nb_covariates = nb_covariates
@@ -42,7 +41,6 @@ class MarginalLikelihoodEvaluator:
         self.omega = omega
         self.axis_permutation = [1, 0] if is_transposed else [0, 1]
         self.y_masked = y * omega
-        self.tsr = tsr_instance
 
     def calc_likelihood(
         self,
@@ -81,30 +79,20 @@ class MarginalLikelihoodEvaluator:
 
         self.chol_k = torch.linalg.cholesky(kernel_values)
         kernel_inverse = torch.linalg.solve(
-            self.chol_k.t(), torch.linalg.solve(self.chol_k, self.tsr.eye(kernel_size))
+            self.chol_k.t(), torch.linalg.solve(self.chol_k, TSR.eye(kernel_size))
         )
         stabilized_kernel_inv = (kernel_inverse.t() + kernel_inverse) / 2
         self.inv_k = TSR.kronecker_prod(
-            self.tsr.eye(rank_decomp), stabilized_kernel_inv
+            TSR.eye(rank_decomp), stabilized_kernel_inv
         )  # I_R Kron inv(Ks)
 
         lambda_u = tau * torch.einsum('ijk,ilk->ijl', [psi_u_mask, psi_u_mask])  # tau * H_T * H_T'
-        # TODO Check broadcasting here, we can simplify it (We just want to diagonalize lambda_u)
         lambda_u = (
-            lambda_u.permute([1, 0, 2])
-            .flatten(start_dim=0, end_dim=1)
-            .unsqueeze(1)
-            .expand([-1, kernel_size, -1])
-            .permute([0, 2, 1])
-            .reshape([lambda_size, lambda_size])
+            (lambda_u.transpose(0, -1).unsqueeze(-1) * TSR.eye(kernel_size))
+            .transpose(1, 2)
+            .reshape(lambda_size, lambda_size)
         )
-        lambda_u = (
-            TSR.kronecker_prod(
-                self.tsr.ones([rank_decomp, rank_decomp]), self.tsr.eye(kernel_size)
-            )
-            * lambda_u
-        )
-        lambda_u = lambda_u + self.inv_k
+        lambda_u += self.inv_k
 
         self.chol_lu = torch.linalg.cholesky(lambda_u)
         self.uu = torch.linalg.solve_triangular(
@@ -118,7 +106,7 @@ class MarginalLikelihoodEvaluator:
             (
                 0.5 * tau**2 * self.uu.t().matmul(self.uu)
                 - self.chol_lu.diag().log().sum()
-                - self.tsr.tensor(rank_decomp) * self.chol_k.diag().log().sum()
+                - TSR.tensor(rank_decomp) * self.chol_k.diag().log().sum()
             ).cpu()
         )
 

@@ -1,10 +1,10 @@
+import math
 from typing import Callable
 
 import numpy as np
 import torch
 
-from pyBKTR.kernel_generators import KernelGenerator
-from pyBKTR.sampler_config import KernelSamplerConfig
+from pyBKTR.kernels import Kernel, KernelParameter
 from pyBKTR.tensor_ops import TSR
 
 
@@ -16,99 +16,72 @@ class KernelParamSampler:
 
     """
 
-    __slots__ = (
-        'config',
-        'kernel_generator',
-        'marginal_ll_eval_fn',
-        'kernel_hparam_name',
-        'theta_value',
-        '_theta_min',
-        '_theta_max',
-        'tsr',
-    )
+    __slots__ = ('kernel', 'marginal_ll_eval_fn')
 
-    config: KernelSamplerConfig
-    """Kernel sampler configuration"""
-    kernel_generator: KernelGenerator
-    """Kernel Generator used for the hyperparameter sampling process"""
+    kernel: Kernel
+    """Kernel used for the hyperparameter sampling process"""
     marginal_ll_eval_fn: Callable
-    """Marginal Likelihood Evaluator used in the sampling process"""
-    kernel_hparam_name: str
-    """The name used in the hyperparameter sampling process"""
-    theta_value: float
-    """Current value of Theta held by the sampler"""
-    _theta_min: float
-    _theta_max: float
 
     def __init__(
         self,
-        config: KernelSamplerConfig,
-        kernel_generator: KernelGenerator,
+        kernel: Kernel,
         marginal_ll_eval_fn: Callable,
-        kernel_hparam_name: str,
-        tsr_instance: TSR,
     ):
-        self.config = config
-        self.kernel_generator = kernel_generator
+        self.kernel = kernel
         self.marginal_ll_eval_fn = marginal_ll_eval_fn
-        self.kernel_hparam_name = kernel_hparam_name
-        self._set_theta_value(config.hyper_mu_prior)
-        self.tsr = tsr_instance
 
-    def _set_theta_value(self, theta: float):
-        """Set the theta value for the sampler and for its respective kernel generator
-
-        Args:
-            theta (float): _description_
-        """
-        self.theta_value = theta
-        setattr(self.kernel_generator, self.kernel_hparam_name, np.exp(theta))
-
-    def initialize_theta_bounds(self):
+    @staticmethod
+    def initialize_theta_bounds(param: KernelParameter) -> tuple[float, float]:
         """Initialize sampling bounds according to current theta value and sampling scale"""
-        theta_range = self.config.slice_sampling_scale * float(self.tsr.rand(1))
-        self._theta_min = max(self.theta_value - theta_range, self.config.min_hyper_value)
-        self._theta_max = min(
-            self._theta_min + self.config.slice_sampling_scale, self.config.max_hyper_value
-        )
+        theta_range = param.slice_sampling_scale * float(TSR.rand(1))
+        theta_min = max(math.log(param.value) - theta_range, param.lower_bound)
+        theta_max = min(theta_min + param.slice_sampling_scale, param.uppder_bound)
+        return theta_min, theta_max
 
-    def _prior_fn(self, theta: float) -> float:
-        """Prior likelihood function for a given hyperparameter value"""
-        return -0.5 * self.config.hyper_precision_prior * (theta - self.config.hyper_mu_prior) ** 2
+    def _prior_fn(self, param: KernelParameter) -> float:
+        """
+        Prior likelihood function for a given hyperparameter value
+        TODO Check if we should always use the same hyper mu prior from the config?
+        """
+        # return -0.5 * self.config.hypr_precision_prior * (theta - self.config.hypr_mu_prior) ** 2
+        return -0.5 * param.hparam_precision * (math.log(param.value)) ** 2
 
-    def sample_rand_theta_value(self):
+    @staticmethod
+    def sample_rand_theta_value(theta_min, theta_max):
         """Sample a random theta value within the sampling bounds"""
-        return self._theta_min + (self._theta_max - self._theta_min) * float(self.tsr.rand(1))
+        return theta_min + (theta_max - theta_min) * float(TSR.rand(1))
 
-    def sample(self):
+    def sample_param(self, param: KernelParameter):
         """The complete kernel hyperparameter sampling process"""
-        initial_theta = self.theta_value
-        self.initialize_theta_bounds()
-        self.kernel_generator.kernel_gen()
-        initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(self.theta_value)
-
-        density_threshold = float(self.tsr.rand(1))
+        theta_min, theta_max = self.initialize_theta_bounds(param)
+        initial_theta = math.log(param.value)
+        self.kernel.kernel_gen()
+        initial_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(param)
+        density_threshold = float(TSR.rand(1))
 
         while True:
-            new_theta = self.sample_rand_theta_value()
-            self._set_theta_value(new_theta)
-            self.kernel_generator.kernel_gen()
-            new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(new_theta)
+            new_theta = self.sample_rand_theta_value(theta_min, theta_max)
+            param.value = math.exp(new_theta)
+            self.kernel.kernel_gen()
+            new_marginal_likelihood = self.marginal_ll_eval_fn() + self._prior_fn(param)
 
             marg_ll_diff = new_marginal_likelihood - initial_marginal_likelihood
             if np.exp(np.clip(marg_ll_diff, -709.78, 709.78)) > density_threshold:
-                return np.exp(new_theta)
+                return param.value
             if new_theta < initial_theta:
-                self._theta_min = new_theta
+                theta_min = new_theta
             else:
-                self._theta_max = new_theta
+                theta_max = new_theta
+
+    def sample(self):
+        for param in self.kernel.parameters:
+            self.sample_param(param)
 
 
-# TODO See if we directly use the norm multivariate from torch
 def sample_norm_multivariate(
-    mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor, tsr_instance: TSR
+    mean_vec: torch.Tensor, precision_upper_tri: torch.Tensor
 ) -> torch.Tensor:
-    """_summary_
+    """Sample a vector from a normal multivariate distribution
 
     Args:
         mean_vec (torch.Tensor): A vector of normal distribution means
@@ -120,7 +93,7 @@ def sample_norm_multivariate(
     """
     return (
         torch.linalg.solve_triangular(
-            precision_upper_tri, tsr_instance.randn_like(mean_vec).unsqueeze(1), upper=True
+            precision_upper_tri, TSR.randn_like(mean_vec).unsqueeze(1), upper=True
         ).squeeze()
         + mean_vec
     )
@@ -135,7 +108,6 @@ def get_cov_decomp_chol(
     tau: float,
     y: torch.Tensor,
     wish_precision_tensor: torch.Tensor,
-    tsr_instance: TSR,
 ):
     y_masked = omega * y
     # TODO Merge some parts with marginal ll of spatial and temporal
@@ -148,7 +120,7 @@ def get_cov_decomp_chol(
     psi_c_mask = psi_c_mask.permute([1, 0, 2, 3]).reshape(
         [psi_c.shape[0] * psi_c.shape[1], psi_c.shape[2] * psi_c.shape[3]]
     )
-    inv_s = TSR.kronecker_prod(tsr_instance.eye(rank_cp), wish_precision_tensor)
+    inv_s = TSR.kronecker_prod(TSR.eye(rank_cp), wish_precision_tensor)
     lambda_c = tau * psi_c_mask.t().matmul(psi_c_mask) + inv_s
     chol_lc = torch.linalg.cholesky(lambda_c)
     cc = torch.linalg.solve(chol_lc, psi_c_mask.t().matmul(y_masked.t().flatten()))
@@ -177,14 +149,15 @@ class PrecisionMatrixSampler:
     wish_df: int
     wish_precision_tensor: torch.Tensor
 
-    def __init__(self, nb_covariates: int, rank_cp: int, tsr_instance: TSR):
+    def __init__(self, nb_covariates: int, rank_cp: int):
         self.nb_covariates = nb_covariates
         self.wish_df = nb_covariates + rank_cp
-        self.tsr = tsr_instance
 
-    def sample(self, covs_decomp):
-        w = covs_decomp.matmul(covs_decomp.t()) + self.tsr.eye(self.nb_covariates)
-        wish_sigma = ((w + w.t()) * 0.5).inverse()
+    def sample(self, covs_decomp: torch.Tensor):
+        w = covs_decomp.matmul(covs_decomp.t()) + TSR.eye(self.nb_covariates)
+        # TODO check if we can use cov instead of precision
+        w_inv = w.inverse()
+        wish_sigma = (w_inv + w_inv.t()) * 0.5
         wish_precision_matrix = torch.distributions.Wishart(
             df=self.wish_df, covariance_matrix=wish_sigma
         ).sample()
