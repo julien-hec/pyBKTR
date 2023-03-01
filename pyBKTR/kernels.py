@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import math
+from enum import Enum
 from functools import cached_property
 from typing import Callable, Literal
 
@@ -117,7 +118,10 @@ class Kernel(abc.ABC):
             self.distance_matrix = distance_matrix
 
     def __mul__(self, other) -> KernelComposed:
-        return KernelComposed(self, other, f'({self._name} * {other._name})')
+        return KernelComposed(self, other, f'({self._name} * {other._name})', CompositionOps.MUL)
+
+    def __add__(self, other) -> KernelComposed:
+        return KernelComposed(self, other, f'({self._name} + {other._name})', CompositionOps.ADD)
 
 
 class KernelWhiteNoise(Kernel):
@@ -254,13 +258,24 @@ class KernelMatern(Kernel):
         return self.smoothness_kernel_fn(temp_kernel) * (-temp_kernel).exp()
 
 
+class CompositionOps(Enum):
+    MUL = 'mul'
+    ADD = 'add'
+
+
 class KernelComposed(Kernel):
     _name: str = ''
     parameters: list = []
     left_kernel = Kernel
     right_kernel = Kernel
 
-    def __init__(self, left_kernel: Kernel, right_kernel: Kernel, new_name: str) -> None:
+    def __init__(
+        self,
+        left_kernel: Kernel,
+        right_kernel: Kernel,
+        new_name: str,
+        composition_operation: CompositionOps,
+    ) -> None:
         if left_kernel.distance_type != right_kernel.distance_type:
             raise RuntimeError('Composed kernel must have the same distance type')
         new_jitter_val = max(
@@ -276,9 +291,15 @@ class KernelComposed(Kernel):
         self.right_kernel = right_kernel
         self._name = new_name
         self.parameters = self.left_kernel.parameters + self.right_kernel.parameters
+        self.composition_operation = composition_operation
 
     def _core_kernel_fn(self) -> torch.Tensor:
-        return self.left_kernel._core_kernel_fn() * self.right_kernel._core_kernel_fn()
+        match self.composition_operation:
+            case CompositionOps.ADD:
+                return self.left_kernel._core_kernel_fn() + self.right_kernel._core_kernel_fn()
+            case CompositionOps.MUL:
+                return self.left_kernel._core_kernel_fn() * self.right_kernel._core_kernel_fn()
+        raise RuntimeError('Composition operation not implemented')
 
     def set_distance_matrix(self, x: None | torch.Tensor, distance_matrix: None | torch.Tensor):
         super().set_distance_matrix(x, distance_matrix)
