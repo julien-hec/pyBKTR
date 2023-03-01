@@ -205,6 +205,9 @@ class BKTRRegressor:
         self.temporal_kernel = temporal_kernel
         self.spatial_kernel.set_distance_matrix(spatial_kernel_x, spatial_kernel_dist)
         self.temporal_kernel.set_distance_matrix(temporal_kernel_x, temporal_kernel_dist)
+        # Create first kernels
+        self.spatial_kernel.kernel_gen()
+        self.temporal_kernel.kernel_gen()
 
     def mcmc_sampling(self) -> dict[str, float | torch.Tensor]:
         """Launch the MCMC sampling process for a predefined number of iterations
@@ -535,3 +538,6 @@ class BKTRRegressor:
         self._create_result_logger()
         self._create_likelihood_evaluators()
         self._create_hparam_samplers()
+        # Calcultate first likelihoods
+        self._calc_spatial_marginal_ll()
+        self._calc_temporal_marginal_ll()

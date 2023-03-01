@@ -120,6 +120,26 @@ class Kernel(abc.ABC):
         return KernelComposed(self, other, f'({self._name} * {other._name})')
 
 
+class KernelWhiteNoise(Kernel):
+    variance: KernelParameter
+    distance_matrix: torch.Tensor
+    _name: str = 'White Noise Kernel'
+
+    def __init__(
+        self,
+        variance=KernelParameter(1, 'variance', is_constant=True),
+        kernel_variance: float = 1,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        jitter_value: float | None = None,
+    ) -> None:
+        super().__init__(kernel_variance, distance_type, jitter_value)
+        self.variance = variance
+        self.variance.set_kernel(self)
+
+    def _core_kernel_fn(self) -> torch.Tensor:
+        return TSR.eye(self.distance_matrix.shape[0]) * self.variance.value
+
+
 class KernelSE(Kernel):
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor

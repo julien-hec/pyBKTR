@@ -155,6 +155,7 @@ class PrecisionMatrixSampler:
 
     def sample(self, covs_decomp: torch.Tensor):
         w = covs_decomp.matmul(covs_decomp.t()) + TSR.eye(self.nb_covariates)
+        # TODO check if we can use cov instead of precision
         w_inv = w.inverse()
         wish_sigma = (w_inv + w_inv.t()) * 0.5
         wish_precision_matrix = torch.distributions.Wishart(
