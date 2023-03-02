@@ -12,17 +12,21 @@ from pyBKTR.distances import DIST_TYPE, DistanceCalculator
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import log
 
+DEFAULT_LBOUND = log(1e-3)
+DEFAULT_UBOUND = log(1e3)
+
 
 class KernelParameter:
+
     value: float
     """The hyperparameter mean's prior value (Paper -- :math:`\\phi`) or its constant value"""
     name: str
     """The name of the paramater (used in logging and in kernel representation)"""
-    is_constant: bool
+    is_constant: bool = False
     """Says if the kernel parameter is constant or not (if it is constant, there is no sampling)"""
-    lower_bound: float
+    lower_bound: float = DEFAULT_LBOUND
     """The hyperparameter's minimal admissible value in sampling (Paper -- :math:`\\phi_{min}`)"""
-    upper_bound: float
+    upper_bound: float = DEFAULT_UBOUND
     """The hyperparameter's maximal admissible value in sampling (Paper -- :math:`\\phi_{max}`)"""
     slice_sampling_scale: float
     """The sampling range's amplitude (Paper -- :math:`\\rho`)"""
@@ -36,8 +40,8 @@ class KernelParameter:
         value: float,
         name: str,
         is_constant: bool = False,
-        lower_bound: float = log(1e-3),
-        upper_bound: float = log(1e3),
+        lower_bound: float = DEFAULT_LBOUND,
+        upper_bound: float = DEFAULT_UBOUND,
         slice_sampling_scale: float = log(10),
         hparam_precision: float = 1.0,
     ):
@@ -56,11 +60,19 @@ class KernelParameter:
 
     @property
     def full_name(self) -> str:
-        kernel_str = f'{self.kernel._name} - ' if self.kernel else ''
-        return f'{kernel_str}{self.name}'
+        if self.kernel is None:
+            return self.name
+        return f'{self.kernel._name} - {self.name}'
 
     def __repr__(self):
-        return f'{self.full_name}: {self.value}'
+        rep_attrs = [f'val={self.value}']
+        if self.is_constant:
+            rep_attrs.append('is_const=True')
+        if self.lower_bound != DEFAULT_LBOUND:
+            rep_attrs.append(f'lbound={self.lower_bound}')
+        if self.upper_bound != DEFAULT_UBOUND:
+            rep_attrs.append(f'ubound={self.upper_bound}')
+        return f'KernelParam({", ".join(rep_attrs)})'
 
 
 class Kernel(abc.ABC):
@@ -131,7 +143,7 @@ class KernelWhiteNoise(Kernel):
 
     def __init__(
         self,
-        variance=KernelParameter(1, 'variance', is_constant=True),
+        variance: KernelParameter = KernelParameter(1, 'variance', is_constant=True),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
@@ -151,7 +163,7 @@ class KernelDotProduct(Kernel):
 
     def __init__(
         self,
-        variance=KernelParameter(1, 'variance', lower_bound=0),
+        variance: KernelParameter = KernelParameter(1, 'variance', lower_bound=0),
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
@@ -171,7 +183,7 @@ class KernelSE(Kernel):
 
     def __init__(
         self,
-        lengthscale=KernelParameter(log(2), 'lengthscale'),
+        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
@@ -191,8 +203,8 @@ class KernelRQ(Kernel):
 
     def __init__(
         self,
-        lengthscale=KernelParameter(log(2), 'lengthscale'),
-        alpha=KernelParameter(log(2), 'alpha'),
+        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
+        alpha: KernelParameter = KernelParameter(log(2), 'alpha'),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
@@ -216,8 +228,8 @@ class KernelPeriodic(Kernel):
 
     def __init__(
         self,
-        lengthscale=KernelParameter(log(2), 'lengthscale'),
-        period_length=KernelParameter(log(2), 'period length'),
+        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
+        period_length: KernelParameter = KernelParameter(log(2), 'period length'),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
@@ -244,7 +256,7 @@ class KernelMatern(Kernel):
     def __init__(
         self,
         smoothness_factor: Literal[1, 3, 5],
-        lengthscale=KernelParameter(log(2), 'lengthscale'),
+        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
@@ -296,6 +308,7 @@ class KernelComposed(Kernel):
         new_name: str,
         composition_operation: CompositionOps,
     ) -> None:
+        composed_variance = 1
         if left_kernel.distance_type != right_kernel.distance_type:
             raise RuntimeError('Composed kernel must have the same distance type')
         new_jitter_val = max(
@@ -303,7 +316,7 @@ class KernelComposed(Kernel):
             right_kernel.jitter_value or TSR.default_jitter,
         )
         super().__init__(
-            left_kernel.kernel_variance,  # TODO check if we can multiply
+            composed_variance,
             left_kernel.distance_type,
             new_jitter_val,
         )

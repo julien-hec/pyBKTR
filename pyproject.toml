@@ -8,10 +8,10 @@ version = "0.1.0"
 description = "Python implementation of the Scalable Spatiotemporally Varying Coefficient Modelling with Bayesian Kernelized Tensor Regression"
 readme = "README.md"
 authors = [
-    {name = "Mengying Lei", email = "julien.lanthier@hec.ca"},
+    {name = "Julien Lanthier", email = "julien.lanthier@hec.ca"},
+    {name = "Mengying Lei"},
     {name = "Aurelie Labbe"},
     {name = "Lijun Sun"},
-    {name = "Julien Lanthier"},
 ]
 classifiers = [
     "Development Status :: 1 - Planning",
@@ -32,8 +32,8 @@ dev = [
     "black==22.6.0",
     "flake8==4.0.1",
     "pre-commit==2.20.0",
-    "Sphinx==4.5.0",
-    "sphinx-rtd-theme==1.0.0",
+    "Sphinx==6.1.3",
+    "sphinx-rtd-theme==1.2.0",
 ]
 
 [tool.black]

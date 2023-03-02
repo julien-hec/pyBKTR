@@ -21,18 +21,18 @@ pyBKTR.bktr module
    :undoc-members:
    :show-inheritance:
 
-pyBKTR.bktr\_config module
---------------------------
+pyBKTR.distances module
+-----------------------
 
-.. automodule:: pyBKTR.bktr_config
+.. automodule:: pyBKTR.distances
    :members:
    :undoc-members:
    :show-inheritance:
 
-pyBKTR.kernel\_generators module
---------------------------------
+pyBKTR.kernels module
+---------------------
 
-.. automodule:: pyBKTR.kernel_generators
+.. automodule:: pyBKTR.kernels
    :members:
    :undoc-members:
    :show-inheritance:
@@ -45,10 +45,18 @@ pyBKTR.likelihood\_evaluator module
    :undoc-members:
    :show-inheritance:
 
-pyBKTR.sampler\_config module
------------------------------
+pyBKTR.plots module
+-------------------
 
-.. automodule:: pyBKTR.sampler_config
+.. automodule:: pyBKTR.plots
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+pyBKTR.result\_logger module
+----------------------------
+
+.. automodule:: pyBKTR.result_logger
    :members:
    :undoc-members:
    :show-inheritance:

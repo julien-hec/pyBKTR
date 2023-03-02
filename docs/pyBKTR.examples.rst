@@ -12,6 +12,14 @@ pyBKTR.examples.bixi module
    :undoc-members:
    :show-inheritance:
 
+pyBKTR.examples.simu module
+---------------------------
+
+.. automodule:: pyBKTR.examples.simu
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 
