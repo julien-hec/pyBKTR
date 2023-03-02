@@ -144,6 +144,26 @@ class KernelWhiteNoise(Kernel):
         return TSR.eye(self.distance_matrix.shape[0]) * self.variance.value
 
 
+class KernelDotProduct(Kernel):
+    variance: KernelParameter
+    distance_matrix: torch.Tensor
+    _name: str = 'Linear Kernel'
+
+    def __init__(
+        self,
+        variance=KernelParameter(1, 'variance', lower_bound=0),
+        kernel_variance: float = 1,
+        jitter_value: float | None = None,
+    ) -> None:
+        self.distance_type = DIST_TYPE.DOT_PRODUCT
+        super().__init__(kernel_variance, self.distance_type, jitter_value)
+        self.variance = variance
+        self.variance.set_kernel(self)
+
+    def _core_kernel_fn(self) -> torch.Tensor:
+        return self.distance_matrix + self.variance.value
+
+
 class KernelSE(Kernel):
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
