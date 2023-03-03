@@ -24,7 +24,13 @@ author = 'Julien Lanthier, Mengying Lei, Aurelie Labbe, Lijun Sun'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ['sphinx.ext.autodoc', 'sphinx.ext.napoleon', 'sphinx.ext.viewcode']
+extensions = [
+    'sphinx.ext.autodoc', 
+    'sphinx.ext.mathjax', 
+    'sphinx.ext.napoleon', 
+    'sphinx.ext.viewcode',
+    'nbsphinx',
+]
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
@@ -40,3 +46,8 @@ html_static_path = ['_static']
 autoclass_content = 'both'
 autodoc_typehints_format = 'short'
 python_use_unqualified_type_names = True
+
+nbsphinx_custom_formats = {
+    ".md": ["jupytext.reads", {"fmt": "mystnb"}],
+}
+nbsphinx_execute = 'never'

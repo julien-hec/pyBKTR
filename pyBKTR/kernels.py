@@ -258,7 +258,7 @@ class KernelMatern(Kernel):
         smoothness_factor: Literal[1, 3, 5],
         lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.HAVERSINE,
         jitter_value: float | None = None,
     ) -> None:
         if smoothness_factor not in {1, 3, 5}:
