@@ -11,20 +11,15 @@ from pyBKTR.bktr import BKTRRegressor
 
 
 class BKTRBetaPlotMaker:
-    def __init__(
-        self,
-        bktr_regressor: BKTRRegressor,
-        spatial_feature_labels: list[str],
-        temporal_feature_labels: list[str],
-        spatial_points_labels: list[str],
-        temporal_points_labels: list[str],
-    ) -> None:
+    def __init__(self, bktr_regressor: BKTRRegressor) -> None:
         self.bktr_regressor = bktr_regressor
-        self.spatial_feature_labels = spatial_feature_labels
-        self.temporal_feature_labels = temporal_feature_labels
-        self.spatial_points_labels = spatial_points_labels
-        self.temporal_points_labels = temporal_points_labels
-        self.feature_labels = ['_INTERSECT_', *spatial_feature_labels, *temporal_feature_labels]
+        self.spatial_labels = bktr_regressor.spatial_labels
+        self.temporal_labels = bktr_regressor.temporal_labels
+        self.feature_labels = [
+            '_INTERSECT_',
+            *bktr_regressor.spatial_feature_labels,
+            *bktr_regressor.temporal_feature_labels,
+        ]
 
     def get_beta_est_stdev_dfs(
         self,
@@ -39,23 +34,23 @@ class BKTRBetaPlotMaker:
         beta_est = self.bktr_regressor.beta_estimates
         beta_stdev = self.bktr_regressor.beta_stdev
         if is_temporal_plot:
-            point_label_index = self.spatial_points_labels.index(plot_point_label)
+            point_label_index = self.spatial_labels.index(plot_point_label)
             beta_est_values = beta_est[point_label_index, :, feature_labels_indexes]
             beta_stdev_values = beta_stdev[point_label_index, :, feature_labels_indexes]
             beta_est_df = pd.DataFrame(
-                beta_est_values, columns=plot_feature_labels, index=self.temporal_points_labels
+                beta_est_values, columns=plot_feature_labels, index=self.temporal_labels
             )
             beta_stdev_df = pd.DataFrame(
-                beta_stdev_values, columns=plot_feature_labels, index=self.temporal_points_labels
+                beta_stdev_values, columns=plot_feature_labels, index=self.temporal_labels
             )
             return beta_est_df, beta_stdev_df
 
         # Get only spatial estimates for spatial plots
-        point_label_index = self.temporal_points_labels.index(plot_point_label)
+        point_label_index = self.temporal_labels.index(plot_point_label)
         beta_est_values = beta_est[:, point_label_index, feature_labels_indexes]
         beta_stdev_values = beta_stdev[:, point_label_index, feature_labels_indexes]
         beta_est_df = pd.DataFrame(
-            beta_est_values, columns=plot_feature_labels, index=self.spatial_points_labels
+            beta_est_values, columns=plot_feature_labels, index=self.spatial_labels
         )
         return beta_est_df, None
 
@@ -65,6 +60,8 @@ class BKTRBetaPlotMaker:
         plot_point_label: str,
         show_figure: bool = True,
         colorscale_hexas=px.colors.qualitative.Plotly,
+        fig_width: int = 850,
+        fig_height: int = 550,
     ):
         beta_est_df, beta_stdev_df = self.get_beta_est_stdev_dfs(
             plot_feature_labels, plot_point_label, is_temporal_plot=True
@@ -112,8 +109,8 @@ class BKTRBetaPlotMaker:
             yaxis_title='Value of coefficients',
             title=f'Location: {plot_point_label.title()}',
             hovermode='x',
-            width=850,
-            height=550,
+            width=fig_width,
+            height=fig_height,
         )
         if show_figure:
             fig.show()
@@ -123,7 +120,7 @@ class BKTRBetaPlotMaker:
         self,
         plot_feature_labels: list[str],
         plot_point_label: str,
-        geo_coordinates: list[list[float, float]],
+        geo_coordinates: pd.DataFrame,
         nb_cols: int = 1,
         mapbox_zoom: int = 9,
         use_dark_mode: bool = True,
@@ -141,9 +138,8 @@ class BKTRBetaPlotMaker:
             subplot_titles=feature_titles,
             specs=[[{'type': 'mapbox'} for _ in range(nb_cols)] for _ in range(nb_rows)],
         )
-        df_coord = pd.DataFrame(
-            geo_coordinates, columns=['lat', 'lon'], index=self.spatial_points_labels
-        )
+        df_coord = geo_coordinates.copy()
+        df_coord.columns = ['lat', 'lon']
         lat_list = df_coord['lat'].to_list()
         lon_list = df_coord['lon'].to_list()
         for i, feature_label in enumerate(plot_feature_labels):

@@ -45,9 +45,8 @@ class DistanceCalculator:
 
     @classmethod
     def calc_linear_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=1)
-        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        return (xu1 - xu2.t()).abs()
+        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2, expected_last_dim_shape=1)
+        return (x1 - x2.t()).abs()
 
     @classmethod
     def calc_euclidean_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
