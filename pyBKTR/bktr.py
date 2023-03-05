@@ -99,18 +99,18 @@ class BKTRRegressor:
 
     def __init__(
         self,
-        temporal_covariate: pd.DataFrame,
-        spatial_covariate: pd.DataFrame,
-        y: pd.DataFrame,
+        temporal_covariates_df: pd.DataFrame,
+        spatial_covariates_df: pd.DataFrame,
+        y_df: pd.DataFrame,
         rank_decomp: int,
         burn_in_iter: int,
         sampling_iter: int,
         spatial_kernel: Kernel = KernelMatern(smoothness_factor=3),
-        spatial_x: None | pd.DataFrame = None,
-        spatial_dist: None | pd.DataFrame = None,
+        spatial_x_df: None | pd.DataFrame = None,
+        spatial_dist_df: None | pd.DataFrame = None,
         temporal_kernel: Kernel = KernelSE(),
-        temporal_x: None | pd.DataFrame = None,
-        temporal_dist: None | pd.DataFrame = None,
+        temporal_x_df: None | pd.DataFrame = None,
+        temporal_dist_df: None | pd.DataFrame = None,
         sigma_r: float = 1e-2,
         a_0: float = 1e-6,
         b_0: float = 1e-6,
@@ -122,30 +122,30 @@ class BKTRRegressor:
         """Create a new *BKTRRegressor* object.
 
         Args:
-            spatial_covariate (pd.DataFrame): Spatial Covariates. A
+            spatial_covariates_df (pd.DataFrame): Spatial Covariates. A
                 two dimension dataframe (nb spatial points x nb spatial covariates).
-            temporal_covariate (np.ndarray | torch.Tensor):  Temporal Covariates. A
+            temporal_covariates_df (np.ndarray | torch.Tensor):  Temporal Covariates. A
                 two dimension dataframe (nb temporal points x nb temporal covariates).
-            y (pd.DataFrame): Response variable (`Y`). Variable that we want to
+            y_df (pd.DataFrame): Response variable (`Y`). Variable that we want to
                 predict. A two dimensions dataframe (nb spatial points x nb spatial points).
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
             sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
             spatial_kernel (Kernel, optional): Spatial kernel Used.
                 Defaults to KernelMatern(smoothness_factor=3).
-            spatial_x (None | pd.DataFrame, optional): Spatial kernel input
+            spatial_x_df (None | pd.DataFrame, optional): Spatial kernel input
                 tensor used to calculate covariate distance. Vector of length equal to nb
                 spatial points. Defaults to None.
-            spatial_kernel_dist (None | pd.DataFrame, optional): Spatial kernel
+            spatial_dist_df (None | pd.DataFrame, optional): Spatial kernel
                 covariate distance. A two dimensions df (nb spatial points x nb spatial
                 points).  Should be used instead of `spatial_kernel_x` if distance was already
                 calculated. Defaults to None.
             temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
-            temporal_kernel_x (None | pd.DataFrame, optional): Temporal kernel input tensor
+            temporal_x_df (None | pd.DataFrame, optional): Temporal kernel input tensor
                 used to calculate covariate distance. Vector of length equal to nb temporal
                 points. Defaults to None.
-            temporal_kernel_dist (None | pd.DataFrame, optional): Temporal kernel covariate
+            temporal_dist_df (None | pd.DataFrame, optional): Temporal kernel covariate
                 distance. A two dimensions df (nb temporal points x nb temporal points).
                 Should be used instead of `temporal_kernel_x` if distance was already
                 calculated. Defaults to None.
@@ -165,39 +165,37 @@ class BKTRRegressor:
                 file name (if None, no suffix is added). Defaults to None.
 
         Raises:
-            ValueError: If none or both `spatial_kernel_x` and `spatial_kernel_dist` are provided
-            ValueError: If none or both `temporal_kernel_x` and `temporal_kernel_dist` are provided
-            ValueError: If `y` or `omega` first dimension's length are different than
-                `spatial_covariate_matrix` first dimension
-            ValueError: If `y` or `omega` second dimension's length are different than
-                `temporal_covariate_matrix` first dimension
+            ValueError: If none or both `spatial_x_df` and `spatial_dist_df` are provided
+            ValueError: If none or both `temporal_x_df` and `temporal_dist_df` are provided
+            ValueError: If `y` index is different than `spatial_covariates_df` index
+            ValueError: If `y` columns are different than `temporal_covariates_df` index
         """
         self._verify_input_labels(
-            y,
-            spatial_covariate,
-            temporal_covariate,
-            spatial_x,
-            spatial_dist,
-            temporal_x,
-            temporal_dist,
+            y_df,
+            spatial_covariates_df,
+            temporal_covariates_df,
+            spatial_x_df,
+            spatial_dist_df,
+            temporal_x_df,
+            temporal_dist_df,
         )
 
         # Set labels
-        self.spatial_labels = spatial_covariate.index.to_list()
-        self.temporal_labels = temporal_covariate.index.to_list()
-        self.spatial_feature_labels = spatial_covariate.columns.to_list()
-        self.temporal_feature_labels = temporal_covariate.columns.to_list()
+        self.spatial_labels = spatial_covariates_df.index.to_list()
+        self.temporal_labels = temporal_covariates_df.index.to_list()
+        self.spatial_feature_labels = spatial_covariates_df.columns.to_list()
+        self.temporal_feature_labels = temporal_covariates_df.columns.to_list()
 
         # Tensor assignation
-        self.omega = TSR.tensor(1 - y.isna().to_numpy())
-        self.y = TSR.tensor(y.to_numpy(na_value=0))
-        spatial_covariates = TSR.tensor(spatial_covariate.to_numpy())
-        temporal_covariates = TSR.tensor(temporal_covariate.to_numpy())
+        self.omega = TSR.tensor(1 - y_df.isna().to_numpy())
+        self.y = TSR.tensor(y_df.to_numpy(na_value=0))
+        spatial_covariates = TSR.tensor(spatial_covariates_df.to_numpy())
+        temporal_covariates = TSR.tensor(temporal_covariates_df.to_numpy())
         self.tau = 1 / TSR.tensor(sigma_r)
-        temporal_x_tsr = TSR.get_df_tensor_or_none(temporal_x)
-        temporal_dist_tsr = TSR.get_df_tensor_or_none(temporal_dist)
-        spatial_x_tsr = TSR.get_df_tensor_or_none(spatial_x)
-        spatial_dist_tsr = TSR.get_df_tensor_or_none(spatial_dist)
+        temporal_x_tsr = TSR.get_df_tensor_or_none(temporal_x_df)
+        temporal_dist_tsr = TSR.get_df_tensor_or_none(temporal_dist_df)
+        spatial_x_tsr = TSR.get_df_tensor_or_none(spatial_x_df)
+        spatial_dist_tsr = TSR.get_df_tensor_or_none(spatial_dist_df)
 
         # Param assignation
         self.rank_decomp = rank_decomp

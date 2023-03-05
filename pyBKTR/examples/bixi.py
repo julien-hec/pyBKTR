@@ -41,16 +41,16 @@ def run_bixi_bktr(
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
-            temporal_covariate=weather_df,
-            spatial_covariate=station_df,
-            y=departure_df,
+            temporal_covariates_df=weather_df,
+            spatial_covariates_df=station_df,
+            y_df=departure_df,
             rank_decomp=10,
             burn_in_iter=burn_in_iter,
             sampling_iter=sampling_iter,
             spatial_kernel=spatial_kernel,
-            spatial_x=spatial_x,
+            spatial_x_df=spatial_x,
             temporal_kernel=temporal_kernel,
-            temporal_x=temporal_x,
+            temporal_x_df=temporal_x,
             results_export_dir=results_export_dir,
             sampled_beta_indexes=[230, 450],
             sampled_y_indexes=[100, 325],
