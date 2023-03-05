@@ -51,6 +51,7 @@ class BKTRRegressor:
         'sampled_beta_indexes',
         'sampled_y_indexes',
         'results_export_dir',
+        'results_export_suffix',
     ]
     y: torch.Tensor
     omega: torch.Tensor
@@ -108,6 +109,7 @@ class BKTRRegressor:
         sampled_beta_indexes: list[int] = [],
         sampled_y_indexes: list[int] = [],
         results_export_dir: str | None = None,
+        results_export_suffix: str | None = None,
     ):
         """Create a new *BKTRRegressor* object.
 
@@ -153,6 +155,8 @@ class BKTRRegressor:
                 to be sampled through iterations. Defaults to [].
             results_export_dir (str | None, optional): Path of the folder where the csv file
                 will be exported (if None it is printed). Defaults to None.
+            results_export_suffix (str | None, optional): Suffix added at the end of the csv
+                file name (if None, no suffix is added). Defaults to None.
 
         Raises:
             ValueError: If none or both `spatial_kernel_x` and `spatial_kernel_dist` are provided
@@ -196,6 +200,7 @@ class BKTRRegressor:
         self.sampled_beta_indexes = sampled_beta_indexes
         self.sampled_y_indexes = sampled_y_indexes
         self.results_export_dir = results_export_dir
+        self.results_export_suffix = results_export_suffix
 
         # Reshape covariates
         self._reshape_covariates(spatial_covariates, temporal_covariates)
@@ -386,6 +391,7 @@ class BKTRRegressor:
             sampled_beta_indexes=self.sampled_beta_indexes,
             sampled_y_indexes=self.sampled_y_indexes,
             results_export_dir=self.results_export_dir,
+            results_export_suffix=self.results_export_suffix,
         )
 
     def _create_likelihood_evaluators(self):

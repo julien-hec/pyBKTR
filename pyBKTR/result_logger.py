@@ -30,6 +30,7 @@ class ResultLogger:
         'sum_y_est',
         'last_time_stamp',
         'export_path',
+        'export_suffix',
         'error_metrics',
     ]
 
@@ -41,6 +42,7 @@ class ResultLogger:
         nb_iter: int,
         nb_burn_in_iter: int,
         results_export_dir: str | None = None,
+        results_export_suffix: str | None = None,
         sampled_beta_indexes: list[int] = [],
         sampled_y_indexes: list[int] = [],
     ):
@@ -48,13 +50,18 @@ class ResultLogger:
         self.logged_params_map = defaultdict(list)
 
         # Set export dir
-        if results_export_dir is None:
+        if results_export_dir is None and results_export_suffix is not None:
+            raise ValueError(
+                'Cannot set a suffix for the export file if no export directory is provided.'
+            )
+        elif results_export_dir is None:
             self.export_path = None
         else:
             export_path = Path(results_export_dir)
             if not export_path.is_dir():
                 raise ValueError(f'Path {export_path} does not exists.')
             self.export_path = export_path
+        self.export_suffix = results_export_suffix
 
         # Create tensors that accumulate values needed for estimates
         self.sum_beta_est = TSR.zeros(covariates.shape)
@@ -187,9 +194,12 @@ class ResultLogger:
             **error_metrics,
         }
 
-    def _get_file_name(self, file_prefix: str):
+    def _get_file_name(self, export_type_name: str):
         time_now = datetime.now()
-        file_name = f'{file_prefix}_{time_now:%Y%m%d_%H%M}'
+        name_components = [export_type_name, time_now.strftime('%Y%m%d_%H%M')]
+        if self.export_suffix:
+            name_components.append(self.export_suffix)
+        file_name = '_'.join(name_components)
         return self.export_path.joinpath(f'{file_name}.csv')
 
     def log_iter_results(self):
