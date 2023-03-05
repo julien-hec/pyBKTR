@@ -92,7 +92,7 @@ class BKTRRegressor:
         temporal_covariate_matrix: np.ndarray,
         spatial_covariate_matrix: np.ndarray,
         y: np.ndarray,
-        omega: np.ndarray,  # TODO omega could be determined from y missing values (np.NaN)
+        omega: np.ndarray,  # TODO omega could be determined from y missing values (np.NaN) #12
         rank_decomp: int,
         burn_in_iter: int,
         sampling_iter: int,
