@@ -9,6 +9,7 @@ class DIST_TYPE(Enum):
     LINEAR = 'linear'
     EUCLIDEAN = 'euclidean'
     HAVERSINE = 'haversine'
+    DOT_PRODUCT = 'dot product'
 
 
 class DistanceCalculator:
@@ -21,6 +22,8 @@ class DistanceCalculator:
                 return cls.calc_euclidean_dist(x, x)
             case DIST_TYPE.HAVERSINE:
                 return cls.calc_haversine_dist(x, x, earth_radius)
+            case DIST_TYPE.DOT_PRODUCT:
+                return cls.calc_dotproduct_dist(x, x)
 
     @staticmethod
     def check_tensor_dimensions(
@@ -44,7 +47,7 @@ class DistanceCalculator:
     def calc_linear_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
         cls.check_tensor_dimensions(x1, x2, expected_nb_dim=1)
         xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        return xu1 - xu2.t()
+        return (xu1 - xu2.t()).abs()
 
     @classmethod
     def calc_euclidean_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
@@ -65,3 +68,13 @@ class DistanceCalculator:
             dist[:, :, 1] / 2
         ).sin() ** 2
         return earth_radius * 2 * torch.atan2(a.sqrt(), (1 - a).sqrt())
+
+    @classmethod
+    def calc_dotproduct_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
+        if x1.shape != x2.shape:
+            raise RuntimeError('Distance params should have same dimension')
+        xu1, xu2 = x1.unsqueeze(0), x2.unsqueeze(1)
+        dist = xu1 * xu2
+        if x1.ndim > 1:
+            dist = dist.sum(-1)
+        return dist

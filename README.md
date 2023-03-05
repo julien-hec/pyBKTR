@@ -3,16 +3,6 @@ This project is a python implementation of the BKTR algorithm (by Mengying Lei, 
 
 BKTR stands for Scalable Spatiotemporally Varying Coefficient Modelling with **Bayesian Kernelized Tensor Regression**.
 
-### Documentation Generation
-From the docs folder run the following line to regenerate the static doc
-```bash
-sphinx-apidoc -f -o . ../pyBKTR
-```
-then
-```bash
-make html
-```
-
 ### Dev environment setup
 If you wish to contribute to this project, we strongly recommend you to use the precommit setup created in the project. To get started, simply follow these instructions.
 
@@ -29,4 +19,20 @@ pre-commit install
 Finally, everything should work fine if when run the pre-commit hooks.
 ```bash
 pre-commit run --all-files
+```
+
+### Documentation Generation
+You should already have the dev environment setup
+
+Pandoc needs to be installed on your local machine, follow the instructions in the following link
+https://pandoc.org/installing.html
+
+
+From the docs folder run the following line to regenerate the static doc
+```bash
+sphinx-apidoc -f -o . ../pyBKTR
+```
+then
+```bash
+make html
 ```
