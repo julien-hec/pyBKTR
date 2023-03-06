@@ -16,15 +16,15 @@ class BixiData:
     temporal_x_df: pd.DataFrame
 
     def __init__(self):
-        self.departure_df = self.get_source_df('bike_station_departures')
-        self.weather_df = self.get_source_df('montreal_weather_data')
-        self.station_df = self.get_source_df('bike_station_features')
-        self.spatial_x_df = self.get_source_df('spatial_locations')
-        self.temporal_x_df = self.get_source_df('temporal_locations')
+        self.departure_df = self.get_source_df('bixi_station_departures')
+        self.weather_df = self.get_source_df('bixi_montreal_weather')
+        self.station_df = self.get_source_df('bixi_station_features')
+        self.spatial_x_df = self.get_source_df('bixi_spatial_locations')
+        self.temporal_x_df = self.get_source_df('bixi_temporal_locations')
 
     @staticmethod
     def get_source_df(csv_name: str) -> pd.DataFrame:
-        file_name = resource_stream(__name__, f'../data/cleaned/{csv_name}.csv')
+        file_name = resource_stream('pyBKTR', f'data/{csv_name}.csv')
         return pd.read_csv(file_name, index_col=0)
 
 
