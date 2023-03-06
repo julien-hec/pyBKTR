@@ -8,9 +8,24 @@ from pyBKTR.kernels import KernelMatern, KernelParameter, KernelPeriodic, Kernel
 from pyBKTR.tensor_ops import TSR
 
 
-def get_source_df(csv_name: str) -> pd.DataFrame:
-    file_name = resource_stream(__name__, f'../data/cleaned/{csv_name}.csv')
-    return pd.read_csv(file_name, index_col=0)
+class BixiData:
+    departure_df: pd.DataFrame
+    weather_df: pd.DataFrame
+    station_df: pd.DataFrame
+    spatial_x_df: pd.DataFrame
+    temporal_x_df: pd.DataFrame
+
+    def __init__(self):
+        self.departure_df = self.get_source_df('bike_station_departures')
+        self.weather_df = self.get_source_df('montreal_weather_data')
+        self.station_df = self.get_source_df('bike_station_features')
+        self.spatial_x_df = self.get_source_df('spatial_locations')
+        self.temporal_x_df = self.get_source_df('temporal_locations')
+
+    @staticmethod
+    def get_source_df(csv_name: str) -> pd.DataFrame:
+        file_name = resource_stream(__name__, f'../data/cleaned/{csv_name}.csv')
+        return pd.read_csv(file_name, index_col=0)
 
 
 def run_bixi_bktr(
@@ -27,11 +42,7 @@ def run_bixi_bktr(
     # Set tensor backend according to config
     TSR.set_params(torch_dtype, torch_device, torch_seed)
 
-    departure_df = get_source_df('bike_station_departures')
-    weather_df = get_source_df('montreal_weather_data')
-    station_df = get_source_df('bike_station_features')
-    spatial_x = get_source_df('spatial_locations')
-    temporal_x = get_source_df('temporal_locations')
+    bixi_data = BixiData()
 
     temporal_kernel = (
         KernelPeriodic(period_length=KernelParameter(7, 'period length', is_constant=True))
@@ -41,16 +52,16 @@ def run_bixi_bktr(
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
-            temporal_covariates_df=weather_df,
-            spatial_covariates_df=station_df,
-            y_df=departure_df,
+            temporal_covariates_df=bixi_data.weather_df,
+            spatial_covariates_df=bixi_data.station_df,
+            y_df=bixi_data.departure_df,
             rank_decomp=10,
             burn_in_iter=burn_in_iter,
             sampling_iter=sampling_iter,
             spatial_kernel=spatial_kernel,
-            spatial_x_df=spatial_x,
+            spatial_x_df=bixi_data.spatial_x_df,
             temporal_kernel=temporal_kernel,
-            temporal_x_df=temporal_x,
+            temporal_x_df=bixi_data.temporal_x_df,
             results_export_dir=results_export_dir,
             sampled_beta_indexes=[230, 450],
             sampled_y_indexes=[100, 325],
