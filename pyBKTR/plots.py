@@ -124,6 +124,8 @@ class BKTRBetaPlotMaker:
         nb_cols: int = 1,
         mapbox_zoom: int = 9,
         use_dark_mode: bool = True,
+        fig_width: int = 850,
+        fig_height: int = 550,
     ):
         beta_est_df, _ = self.get_beta_est_stdev_dfs(
             plot_feature_labels, plot_point_label, is_temporal_plot=False
@@ -177,7 +179,11 @@ class BKTRBetaPlotMaker:
                 lat=sum(lat_list) / len(lat_list), lon=sum(lon_list) / len(lon_list)
             ),
         )
-        fig.update_layout(showlegend=False)
+        fig.update_layout(
+            showlegend=False,
+            width=fig_width,
+            height=fig_height,
+        )
         fig.show()
 
     @staticmethod

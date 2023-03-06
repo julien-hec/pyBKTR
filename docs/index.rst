@@ -7,10 +7,21 @@ Welcome to pyBKTR's documentation!
 ==================================
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+   :maxdepth: 6
+   :hidden:
+   :caption: 🚀 Getting Started:
 
-   modules
+   notebooks/BasicUsage
+   notebooks/KernelUsage
+   notebooks/PlotsUsage
+
+
+.. toctree::
+   :maxdepth: 6
+   :hidden:
+   :caption: 📦 Package Resources:
+
+   pyBKTR
 
 
 Indices and tables

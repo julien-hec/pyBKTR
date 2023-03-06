@@ -25,9 +25,16 @@ class TSR:
                 raise ValueError('The dtype used by TSR has no default mapped jitter value')
 
     @classmethod
-    def set_params(cls, dtype: torch.TensorType, device: str, seed: int | None = None):
-        cls.dtype = dtype
-        cls.device = device
+    def set_params(
+        cls,
+        dtype: torch.TensorType | None = None,
+        device: str | None = None,
+        seed: int | None = None,
+    ):
+        if dtype is not None:
+            cls.dtype = dtype
+        if device is not None:
+            cls.device = device
         if seed is not None:
             torch.manual_seed(seed)
 
