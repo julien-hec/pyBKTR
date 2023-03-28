@@ -17,8 +17,7 @@ class BKTRBetaPlotMaker:
         self.temporal_labels = bktr_regressor.temporal_labels
         self.feature_labels = [
             '_INTERSECT_',
-            *bktr_regressor.spatial_feature_labels,
-            *bktr_regressor.temporal_feature_labels,
+            *bktr_regressor.feature_labels,
         ]
 
     def get_beta_est_stdev_dfs(
@@ -48,7 +47,6 @@ class BKTRBetaPlotMaker:
         # Get only spatial estimates for spatial plots
         point_label_index = self.temporal_labels.index(plot_point_label)
         beta_est_values = beta_est[:, point_label_index, feature_labels_indexes]
-        beta_stdev_values = beta_stdev[:, point_label_index, feature_labels_indexes]
         beta_est_df = pd.DataFrame(
             beta_est_values, columns=plot_feature_labels, index=self.spatial_labels
         )
@@ -70,12 +68,12 @@ class BKTRBetaPlotMaker:
         color_cycle = cycle(colorscale_hexas)
 
         for col_name in plot_feature_labels:
-            col_tile = col_name.replace('_', ' ').title()
+            col_title = col_name.replace('_', ' ').title()
             df_col_est = beta_est_df[col_name]
             df_col_stdev = beta_stdev_df[col_name]
 
             line_color = next(color_cycle)
-            fill_rgba = self.hex_rgba(line_color, 0.2)
+            fill_rgba = self.hex_to_rgba(line_color, 0.2)
 
             x_index = beta_est_df.index.to_list()
             upper_stdev = (df_col_est + df_col_stdev).to_list()
@@ -84,14 +82,14 @@ class BKTRBetaPlotMaker:
             scatters.extend(
                 [
                     go.Scatter(
-                        name=col_tile,
+                        name=col_title,
                         x=x_index,
                         y=df_col_est,
                         mode='lines',
                         line=dict(color=line_color),
                     ),
                     go.Scatter(
-                        name=f'{col_tile} Bounds',
+                        name=f'{col_title} Bounds',
                         x=x_index + x_index[::-1],
                         y=upper_stdev + lower_stdev[::-1],
                         mode='lines',
@@ -124,6 +122,7 @@ class BKTRBetaPlotMaker:
         nb_cols: int = 1,
         mapbox_zoom: int = 9,
         use_dark_mode: bool = True,
+        show_figure: bool = True,
         fig_width: int = 850,
         fig_height: int = 550,
     ):
@@ -184,7 +183,10 @@ class BKTRBetaPlotMaker:
             width=fig_width,
             height=fig_height,
         )
-        fig.show()
+        if show_figure:
+            fig.show()
+            return
+        return fig
 
     @staticmethod
     def get_feature_title(feature_name: str) -> str:
@@ -192,7 +194,7 @@ class BKTRBetaPlotMaker:
         return f'{feature_title} Beta Values'
 
     @staticmethod
-    def hex_rgba(hex: str, transparency: float) -> str:
+    def hex_to_rgba(hex: str, transparency: float) -> str:
         col_hex = hex.lstrip('#')
         # Transform each hex in dec
         col_rgb = tuple(int(s, 16) for s in wrap(col_hex, 2))

@@ -14,6 +14,7 @@ class BixiData:
     station_df: pd.DataFrame
     spatial_x_df: pd.DataFrame
     temporal_x_df: pd.DataFrame
+    covariates_df: pd.DataFrame
 
     def __init__(self):
         self.departure_df = self.get_source_df('bixi_station_departures')
@@ -21,6 +22,19 @@ class BixiData:
         self.station_df = self.get_source_df('bixi_station_features')
         self.spatial_x_df = self.get_source_df('bixi_spatial_locations')
         self.temporal_x_df = self.get_source_df('bixi_temporal_locations')
+
+        # Merge covariates df TODO move to utils function and const for index names
+        spa_index_name = 'location'
+        temp_index_name = 'time'
+        station_df = self.station_df.copy()
+        weather_df = self.weather_df.copy()
+        station_df.index.name = spa_index_name
+        station_df.reset_index(inplace=True)
+        weather_df.index.name = temp_index_name
+        weather_df.reset_index(inplace=True)
+        self.covariates_df = pd.merge(station_df, weather_df, how='cross')
+        self.covariates_df.set_index([spa_index_name, temp_index_name], inplace=True)
+        self.covariates_df.sort_index(inplace=True, ascending=False)
 
     @staticmethod
     def get_source_df(csv_name: str) -> pd.DataFrame:
