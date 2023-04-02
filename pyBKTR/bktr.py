@@ -95,6 +95,10 @@ class BKTRRegressor:
     temporal_labels: list
     feature_labels: list
 
+    # Constant string needed for dataframe index names
+    spatial_index_name = 'location'
+    temporal_index_name = 'time'
+
     def __init__(
         self,
         covariates_df: pd.DataFrame,
@@ -196,8 +200,12 @@ class BKTRRegressor:
                 df.sort_index(axis=1, inplace=True)
 
         # Set labels
-        self.spatial_labels = covariates_df.index.get_level_values('location').unique().to_list()
-        self.temporal_labels = covariates_df.index.get_level_values('time').unique().to_list()
+        self.spatial_labels = (
+            covariates_df.index.get_level_values(self.spatial_index_name).unique().to_list()
+        )
+        self.temporal_labels = (
+            covariates_df.index.get_level_values(self.temporal_index_name).unique().to_list()
+        )
         self.feature_labels = covariates_df.columns.to_list()
         # Tensor assignation
         self.omega = TSR.tensor(1 - y_df.isna().to_numpy())
