@@ -198,6 +198,7 @@ class KernelSE(Kernel):
 
 class KernelRQ(Kernel):
     lengthscale: KernelParameter
+    alpha: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'Rational Quadratic Kernel'
 
@@ -222,9 +223,10 @@ class KernelRQ(Kernel):
 
 
 class KernelPeriodic(Kernel):
-    _name: str = 'Periodic Kernel'
     lengthscale: KernelParameter
     period_length: KernelParameter
+    distance_matrix: torch.Tensor
+    _name: str = 'Periodic Kernel'
 
     def __init__(
         self,

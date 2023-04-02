@@ -17,7 +17,6 @@ class ResultLogger:
         'covariates',
         'nb_iter',
         'nb_burn_in_iter',
-        'results_export_dir',
         'sampled_beta_indexes',
         'sampled_y_indexes',
         'logged_params_map',
@@ -179,12 +178,12 @@ class ResultLogger:
         Returns:
             dict [str, float | torch.Tensor]: A dictionary of the MCMC's values of interest
         """
-        nb_after_burn_in_iter = self.nb_iter - self.nb_burn_in_iter
-        self.beta_estimates = self.sum_beta_est / nb_after_burn_in_iter
+        nb_sampling_iter = self.nb_iter - self.nb_burn_in_iter
+        self.beta_estimates = self.sum_beta_est / nb_sampling_iter
         self.beta_stdev = (
-            (self.sum_sq_beta_est / nb_after_burn_in_iter) - self.beta_estimates**2
+            (self.sum_sq_beta_est / nb_sampling_iter) - self.beta_estimates**2
         ).sqrt()
-        self.y_estimates = self.sum_y_est / nb_after_burn_in_iter
+        self.y_estimates = self.sum_y_est / nb_sampling_iter
         error_metrics = self._set_error_metrics()
         iters_summary_dict = {'elapsed_time': self.total_elapsed_time} | error_metrics
         self._print_iter_result('TOTAL', iters_summary_dict)

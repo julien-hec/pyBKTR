@@ -54,8 +54,7 @@ class BKTRRegressor:
         'results_export_suffix',
         'spatial_labels',
         'temporal_labels',
-        'spatial_feature_labels',
-        'temporal_feature_labels',
+        'feature_labels',
     ]
     y: torch.Tensor
     omega: torch.Tensor
@@ -94,13 +93,15 @@ class BKTRRegressor:
     # Labels
     spatial_labels: list
     temporal_labels: list
-    spatial_feature_labels: list
-    temporal_feature_labels: list
+    feature_labels: list
+
+    # Constant string needed for dataframe index names
+    spatial_index_name = 'location'
+    temporal_index_name = 'time'
 
     def __init__(
         self,
-        temporal_covariates_df: pd.DataFrame,
-        spatial_covariates_df: pd.DataFrame,
+        covariates_df: pd.DataFrame,
         y_df: pd.DataFrame,
         rank_decomp: int,
         burn_in_iter: int,
@@ -122,12 +123,15 @@ class BKTRRegressor:
         """Create a new *BKTRRegressor* object.
 
         Args:
-            spatial_covariates_df (pd.DataFrame): Spatial Covariates. A
-                two dimension dataframe (nb spatial points x nb spatial covariates).
-            temporal_covariates_df (np.ndarray | torch.Tensor):  Temporal Covariates. A
-                two dimension dataframe (nb temporal points x nb temporal covariates).
+            covariates_df (pd.DataFrame):  A dataframe containing all the covariates
+                through time and space. It is important that the dataframe has a two
+                indexes named `location` and `time` respectively. The dataframe should
+                also contain every possible combinations of `location` and `time`
+                (i.e. even missing rows should be filled present but filled with NaN).
+                So if the dataframe has 10 locations and 5 time points, it should have
+                50 rows (10 x 5).
             y_df (pd.DataFrame): Response variable (`Y`). Variable that we want to
-                predict. A two dimensions dataframe (nb spatial points x nb spatial points).
+                predict. A two dimensions dataframe (nb locations x nb time points).
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
             sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
@@ -135,18 +139,18 @@ class BKTRRegressor:
                 Defaults to KernelMatern(smoothness_factor=3).
             spatial_x_df (None | pd.DataFrame, optional): Spatial kernel input
                 tensor used to calculate covariate distance. Vector of length equal to nb
-                spatial points. Defaults to None.
+                location points. Defaults to None.
             spatial_dist_df (None | pd.DataFrame, optional): Spatial kernel
-                covariate distance. A two dimensions df (nb spatial points x nb spatial
+                covariate distance. A two dimensions df (nb location points x nb location
                 points).  Should be used instead of `spatial_kernel_x` if distance was already
                 calculated. Defaults to None.
             temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
             temporal_x_df (None | pd.DataFrame, optional): Temporal kernel input tensor
-                used to calculate covariate distance. Vector of length equal to nb temporal
+                used to calculate covariate distance. Vector of length equal to nb time
                 points. Defaults to None.
             temporal_dist_df (None | pd.DataFrame, optional): Temporal kernel covariate
-                distance. A two dimensions df (nb temporal points x nb temporal points).
+                distance. A two dimensions df (nb time points x nb time points).
                 Should be used instead of `temporal_kernel_x` if distance was already
                 calculated. Defaults to None.
             sigma_r (float, optional): Variance of the white noise process TODO
@@ -160,37 +164,53 @@ class BKTRRegressor:
             sampled_y_indexes (list[int], optional): Indexes of y estimates that need
                 to be sampled through iterations. Defaults to [].
             results_export_dir (str | None, optional): Path of the folder where the csv file
-                will be exported (if None it is printed). Defaults to None.
+                will be exported (if None only iteration data is printed). Defaults to None.
             results_export_suffix (str | None, optional): Suffix added at the end of the csv
                 file name (if None, no suffix is added). Defaults to None.
 
         Raises:
             ValueError: If none or both `spatial_x_df` and `spatial_dist_df` are provided
             ValueError: If none or both `temporal_x_df` and `temporal_dist_df` are provided
-            ValueError: If `y` index is different than `spatial_covariates_df` index
-            ValueError: If `y` columns are different than `temporal_covariates_df` index
+            ValueError: If `y` index is different than `covariates_df` location index
+            ValueError: If `y` columns are different than `covariates_df` time index
         """
         self._verify_input_labels(
             y_df,
-            spatial_covariates_df,
-            temporal_covariates_df,
+            covariates_df,
             spatial_x_df,
             spatial_dist_df,
             temporal_x_df,
             temporal_dist_df,
         )
 
-        # Set labels
-        self.spatial_labels = spatial_covariates_df.index.to_list()
-        self.temporal_labels = temporal_covariates_df.index.to_list()
-        self.spatial_feature_labels = spatial_covariates_df.columns.to_list()
-        self.temporal_feature_labels = temporal_covariates_df.columns.to_list()
+        # Sort all df indexes
+        for df in [
+            y_df,
+            covariates_df,
+            spatial_x_df,
+            spatial_dist_df,
+            temporal_x_df,
+            temporal_dist_df,
+        ]:
+            if df is not None:
+                df.sort_index(inplace=True)
+        # Only a subset of dataframes need to have their columns sorted
+        for df in [y_df, spatial_dist_df, temporal_dist_df]:
+            if df is not None:
+                df.sort_index(axis=1, inplace=True)
 
+        # Set labels
+        self.spatial_labels = (
+            covariates_df.index.get_level_values(self.spatial_index_name).unique().to_list()
+        )
+        self.temporal_labels = (
+            covariates_df.index.get_level_values(self.temporal_index_name).unique().to_list()
+        )
+        self.feature_labels = covariates_df.columns.to_list()
         # Tensor assignation
         self.omega = TSR.tensor(1 - y_df.isna().to_numpy())
         self.y = TSR.tensor(y_df.to_numpy(na_value=0))
-        spatial_covariates = TSR.tensor(spatial_covariates_df.to_numpy())
-        temporal_covariates = TSR.tensor(temporal_covariates_df.to_numpy())
+        covariates = TSR.tensor(covariates_df.to_numpy())
         self.tau = 1 / TSR.tensor(sigma_r)
         temporal_x_tsr = TSR.get_df_tensor_or_none(temporal_x_df)
         temporal_dist_tsr = TSR.get_df_tensor_or_none(temporal_dist_df)
@@ -210,7 +230,7 @@ class BKTRRegressor:
         self.results_export_suffix = results_export_suffix
 
         # Reshape covariates
-        self._reshape_covariates(spatial_covariates, temporal_covariates)
+        self._reshape_covariates(covariates, len(self.spatial_labels), len(self.temporal_labels))
 
         # Kernel assignation
         self.spatial_kernel = spatial_kernel
@@ -270,7 +290,7 @@ class BKTRRegressor:
     def _verify_kernel_labels(
         kernel_x: pd.DataFrame | None,
         kernel_dist: pd.DataFrame | None,
-        expected_labels: list,
+        expected_labels: set,
         kernel_type: Literal['spatial', 'temporal'],
     ):
         """Verify if kernel inputs are valid and align with covariates labels.
@@ -278,7 +298,7 @@ class BKTRRegressor:
         Args:
             kernel_x (pd.DataFrame | None): Kernel x to be provided to a kernel.
             kernel_dist (pd.DataFrame | None): Kernel distance to be provided to kernel.
-            expected_labels (list): List of spatial/temporal labels used in covariates.
+            expected_labels (set): List of spatial/temporal labels used in covariates.
             kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): Type of kernel.
 
         Raises:
@@ -286,28 +306,29 @@ class BKTRRegressor:
             ValueError: If kernel_x is provided and its size is not appropriate.
             ValueError: If kernel_dist is provided and its size is not appropriate.
         """
+        cov_related_indx_name = 'location' if kernel_type == 'spatial' else 'time'
         if (kernel_x is None) == (kernel_dist is None):
             raise ValueError(
-                'Either `{kernel_type}_kernel_x` or `{kernel_type}_kernel_dist` must be provided'
+                f'Either `{kernel_type}_kernel_x` or `{kernel_type}_kernel_dist` must be provided'
             )
-        if kernel_x is not None and expected_labels != kernel_x.index.to_list():
+        if kernel_x is not None and expected_labels != set(kernel_x.index):
             raise ValueError(
-                f'`{kernel_type}_x` must have the same index as the {kernel_type} covariates.'
+                f'`{kernel_type}_x` must have the same index as the covariates\''
+                f' {cov_related_indx_name} index.'
             )
         if kernel_dist is not None and not (
-            expected_labels == kernel_dist.index.to_list() == kernel_dist.columns.to_list()
+            expected_labels == set(kernel_dist.index) == set(kernel_dist.columns)
         ):
             raise ValueError(
                 f'`{kernel_type}_dist` index and columns must have the same values as the'
-                f' {kernel_type} covariates\' index.'
+                f' covariates\' {cov_related_indx_name} index.'
             )
 
     @classmethod
     def _verify_input_labels(
         cls,
         y: pd.DataFrame,
-        spatial_covariates: pd.DataFrame,
-        temporal_covariates: pd.DataFrame,
+        covariates_df: pd.DataFrame,
         spatial_kernel_x: pd.DataFrame | None,
         spatial_kernel_dist: pd.DataFrame | None,
         temporal_kernel_x: pd.DataFrame | None,
@@ -317,8 +338,7 @@ class BKTRRegressor:
 
         Args:
             y (pd.DataFrame): y in __init__
-            spatial_covariates (pd.DataFrame): spatial_covariates in __init__
-            temporal_covariates (pd.DataFrame): temporal_covariates in __init__
+            covariates_df (pd.DataFrame): covariates_df in __init__
             spatial_kernel_x (pd.DataFrame | None): spatial_kernel_x in __init__
             spatial_kernel_dist (pd.DataFrame | None): spatial_kernel_dist in __init__
             temporal_kernel_x (pd.DataFrame | None): temporal_kernel_x in __init__
@@ -328,48 +348,48 @@ class BKTRRegressor:
             ValueError: If y index do not correspond with spatial covariates index
             ValueError: If y columns do not correspond with temporal covariates index
         """
-        spatial_labels = spatial_covariates.index.to_list()
-        temporal_labels = temporal_covariates.index.to_list()
-        if spatial_labels != y.index.to_list():
-            raise ValueError('The spatial_covariates and y dataframes must have the same index')
-        if temporal_labels != y.columns.to_list():
+        if covariates_df.index.names != ['location', 'time']:
             raise ValueError(
-                'The temporal_covariates index should hold the same values as the'
+                'The covariates dataframe must have a [`location`, `time`] multiindex.'
+            )
+        loc_set = set(covariates_df.index.get_level_values('location'))
+        time_set = set(covariates_df.index.get_level_values('time'))
+
+        if len(covariates_df) != len(loc_set) * len(time_set):
+            raise ValueError(
+                'The covariates dataframe must have a row for every possible'
+                ' combination of location and time. Even if values are missing (NaN).'
+            )
+        if loc_set != set(y.index):
+            raise ValueError('The covariates location and the y dataframe index must be the same.')
+        if time_set != set(y.columns):
+            raise ValueError(
+                'The covariates time index should hold the same values as the'
                 'y dataframe column names.'
             )
-        cls._verify_kernel_labels(spatial_kernel_x, spatial_kernel_dist, spatial_labels, 'spatial')
-        cls._verify_kernel_labels(
-            temporal_kernel_x, temporal_kernel_dist, temporal_labels, 'temporal'
-        )
+        cls._verify_kernel_labels(spatial_kernel_x, spatial_kernel_dist, loc_set, 'spatial')
+        cls._verify_kernel_labels(temporal_kernel_x, temporal_kernel_dist, time_set, 'temporal')
 
     def _reshape_covariates(
-        self, spatial_covariate_tensor: torch.Tensor, temporal_covariate_tensor: torch.Tensor
+        self, covariate_tensor: torch.Tensor, nb_locations: int, nb_times: int
     ):
         """Reshape the covariate tensors into one single tensor and set it as a property
 
         Args:
-            spatial_covariate_tensor (torch.Tensor): Temporal Covariates
-            temporal_covariate_tensor (torch.Tensor): Spatial Covariates
+            covariate_tensor (torch.Tensor): Tensor of covariates in a (M*N) x P shape
+            nb_locations (int): The number of different locations (M)
+            nb_times (int): The number of different times (N)
         """
-        nb_spaces, nb_spatial_covariates = spatial_covariate_tensor.shape
-        nb_times, nb_temporal_covariates = temporal_covariate_tensor.shape
+        nb_covariates = covariate_tensor.shape[1]
         self.covariates_dim = {
-            'nb_spaces': nb_spaces,  # S
+            'nb_spaces': nb_locations,  # S
             'nb_times': nb_times,  # T
-            'nb_spatial_covariates': nb_spatial_covariates,
-            'nb_temporal_covariates': nb_temporal_covariates,
-            'nb_covariates': 1 + nb_spatial_covariates + nb_temporal_covariates,  # P
+            'nb_covariates': 1 + nb_covariates,  # P
         }
 
-        intersect_covs = TSR.ones([nb_spaces, nb_times, 1])
-        spatial_covs = spatial_covariate_tensor.unsqueeze(1).expand(
-            [nb_spaces, nb_times, nb_spatial_covariates]
-        )
-        time_covs = temporal_covariate_tensor.unsqueeze(0).expand(
-            [nb_spaces, nb_times, nb_temporal_covariates]
-        )
-
-        self.covariates = torch.dstack([intersect_covs, spatial_covs, time_covs])
+        covs = covariate_tensor.reshape([nb_locations, nb_times, nb_covariates])
+        intersect_covs = TSR.ones([nb_locations, nb_times, 1])
+        self.covariates = torch.dstack([intersect_covs, covs])
 
     def _init_covariate_decomp(self):
         """Initialize CP decomposed covariate tensors with normally distributed random values"""

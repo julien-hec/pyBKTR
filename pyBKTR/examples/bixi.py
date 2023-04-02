@@ -6,6 +6,7 @@ from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.distances import DIST_TYPE
 from pyBKTR.kernels import KernelMatern, KernelParameter, KernelPeriodic, KernelSE
 from pyBKTR.tensor_ops import TSR
+from pyBKTR.utils import reshape_covariate_dfs
 
 
 class BixiData:
@@ -14,6 +15,7 @@ class BixiData:
     station_df: pd.DataFrame
     spatial_x_df: pd.DataFrame
     temporal_x_df: pd.DataFrame
+    covariates_df: pd.DataFrame
 
     def __init__(self):
         self.departure_df = self.get_source_df('bixi_station_departures')
@@ -21,6 +23,7 @@ class BixiData:
         self.station_df = self.get_source_df('bixi_station_features')
         self.spatial_x_df = self.get_source_df('bixi_spatial_locations')
         self.temporal_x_df = self.get_source_df('bixi_temporal_locations')
+        self.covariates_df = reshape_covariate_dfs(self.station_df, self.weather_df)
 
     @staticmethod
     def get_source_df(csv_name: str) -> pd.DataFrame:
@@ -52,8 +55,7 @@ def run_bixi_bktr(
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
-            temporal_covariates_df=bixi_data.weather_df,
-            spatial_covariates_df=bixi_data.station_df,
+            covariates_df=bixi_data.covariates_df,
             y_df=bixi_data.departure_df,
             rank_decomp=10,
             burn_in_iter=burn_in_iter,
