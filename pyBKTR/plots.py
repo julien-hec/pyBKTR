@@ -7,91 +7,57 @@ import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 
-from pyBKTR.bktr import BKTRRegressor
+from pyBKTR.utils import get_label_index_or_raise
 
 
 class BKTRBetaPlotMaker:
-    def __init__(self, bktr_regressor: BKTRRegressor) -> None:
-        self.bktr_regressor = bktr_regressor
-        self.spatial_labels = bktr_regressor.spatial_labels
-        self.temporal_labels = bktr_regressor.temporal_labels
-        self.feature_labels = [
-            '_INTERSECT_',
-            *bktr_regressor.feature_labels,
-        ]
+    def __init__(self, beta_summary_df, spatial_labels, temporal_labels, feature_labels) -> None:
+        self.beta_summary_df = beta_summary_df
+        self.spatial_labels = spatial_labels
+        self.temporal_labels = temporal_labels
+        self.feature_labels = feature_labels
 
-    def get_beta_est_stdev_dfs(
+    def plot_temporal_betas(
         self,
         plot_feature_labels: list[str],
-        plot_point_label: str,
-        is_temporal_plot: bool,
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        # Get label indexes
-        feature_labels_indexes = [self.feature_labels.index(s) for s in plot_feature_labels]
-
-        # Get beta estimates and standard deviations
-        beta_est = self.bktr_regressor.beta_estimates
-        beta_stdev = self.bktr_regressor.beta_stdev
-        if is_temporal_plot:
-            point_label_index = self.spatial_labels.index(plot_point_label)
-            beta_est_values = beta_est[point_label_index, :, feature_labels_indexes]
-            beta_stdev_values = beta_stdev[point_label_index, :, feature_labels_indexes]
-            beta_est_df = pd.DataFrame(
-                beta_est_values, columns=plot_feature_labels, index=self.temporal_labels
-            )
-            beta_stdev_df = pd.DataFrame(
-                beta_stdev_values, columns=plot_feature_labels, index=self.temporal_labels
-            )
-            return beta_est_df, beta_stdev_df
-
-        # Get only spatial estimates for spatial plots
-        point_label_index = self.temporal_labels.index(plot_point_label)
-        beta_est_values = beta_est[:, point_label_index, feature_labels_indexes]
-        beta_est_df = pd.DataFrame(
-            beta_est_values, columns=plot_feature_labels, index=self.spatial_labels
-        )
-        return beta_est_df, None
-
-    def create_temporal_beta_plot(
-        self,
-        plot_feature_labels: list[str],
-        plot_point_label: str,
+        spatial_point_label: str,
         show_figure: bool = True,
-        colorscale_hexas=px.colors.qualitative.Plotly,
         fig_width: int = 850,
         fig_height: int = 550,
     ):
-        beta_est_df, beta_stdev_df = self.get_beta_est_stdev_dfs(
-            plot_feature_labels, plot_point_label, is_temporal_plot=True
-        )
+        # Verify all labels are valid
+        get_label_index_or_raise(spatial_point_label, self.spatial_labels, 'spatial')
+        for feature_label in plot_feature_labels:
+            get_label_index_or_raise(feature_label, self.feature_labels, 'feature')
+
         scatters = []
+        colorscale_hexas = px.colors.qualitative.Plotly
         color_cycle = cycle(colorscale_hexas)
 
-        for col_name in plot_feature_labels:
-            col_title = col_name.replace('_', ' ').title()
-            df_col_est = beta_est_df[col_name]
-            df_col_stdev = beta_stdev_df[col_name]
-
+        for feature_label in plot_feature_labels:
+            beta_df = self.beta_summary_df.loc[
+                (spatial_point_label, slice(None), feature_label),
+                ['2.5th Percentile', 'Mean', '97.5th Percentile'],
+            ]
+            col_title = feature_label.replace('_', ' ').title()
             line_color = next(color_cycle)
             fill_rgba = self.hex_to_rgba(line_color, 0.2)
-
-            x_index = beta_est_df.index.to_list()
-            upper_stdev = (df_col_est + df_col_stdev).to_list()
-            lower_stdev = (df_col_est - df_col_stdev).to_list()
+            pctl_025 = beta_df['2.5th Percentile'].to_list()
+            pctl_975 = beta_df['97.5th Percentile'].to_list()
 
             scatters.extend(
                 [
                     go.Scatter(
                         name=col_title,
-                        x=x_index,
-                        y=df_col_est,
+                        x=self.temporal_labels,
+                        y=beta_df['Mean'],
                         mode='lines',
                         line=dict(color=line_color),
                     ),
                     go.Scatter(
                         name=f'{col_title} Bounds',
-                        x=x_index + x_index[::-1],
-                        y=upper_stdev + lower_stdev[::-1],
+                        x=self.temporal_labels + self.temporal_labels[::-1],
+                        y=pctl_975 + pctl_025[::-1],
                         mode='lines',
                         fillcolor=fill_rgba,
                         line=dict(width=0),
@@ -105,7 +71,7 @@ class BKTRBetaPlotMaker:
         fig = go.Figure(scatters)
         fig.update_layout(
             yaxis_title='Value of coefficients',
-            title=f'Location: {plot_point_label.title()}',
+            title=f'Location: {spatial_point_label.title()}',
             hovermode='x',
             width=fig_width,
             height=fig_height,
@@ -114,10 +80,10 @@ class BKTRBetaPlotMaker:
             fig.show()
         return fig
 
-    def create_spatial_beta_plots(
+    def plot_spatial_betas(
         self,
         plot_feature_labels: list[str],
-        plot_point_label: str,
+        temporal_point_label: str,
         geo_coordinates: pd.DataFrame,
         nb_cols: int = 1,
         mapbox_zoom: int = 9,
@@ -126,11 +92,17 @@ class BKTRBetaPlotMaker:
         fig_width: int = 850,
         fig_height: int = 550,
     ):
-        beta_est_df, _ = self.get_beta_est_stdev_dfs(
-            plot_feature_labels, plot_point_label, is_temporal_plot=False
-        )
+        # Verify all labels are valid
+        get_label_index_or_raise(temporal_point_label, self.temporal_labels, 'temporal')
+        for feature_label in plot_feature_labels:
+            get_label_index_or_raise(feature_label, self.feature_labels, 'feature')
+
+        beta_df = self.beta_summary_df.loc[
+            (slice(None), temporal_point_label, plot_feature_labels), ['Mean']
+        ]
+
         feature_titles = [self.get_feature_title(s) for s in plot_feature_labels]
-        min_beta, max_beta = beta_est_df.min().min(), beta_est_df.max().max()
+        min_beta, max_beta = beta_df['Mean'].min(), beta_df['Mean'].max()
         nb_subplots = len(plot_feature_labels)
         nb_rows = math.ceil(nb_subplots / nb_cols)
         fig = make_subplots(
@@ -144,7 +116,10 @@ class BKTRBetaPlotMaker:
         lat_list = df_coord['lat'].to_list()
         lon_list = df_coord['lon'].to_list()
         for i, feature_label in enumerate(plot_feature_labels):
-            beta_col_list = beta_est_df[feature_label].to_list()
+            beta_df_feature = beta_df.loc[
+                (slice(None), temporal_point_label, feature_label), ['Mean']
+            ]
+            beta_col_list = beta_df_feature['Mean'].to_list()
             fig.add_trace(
                 go.Scattermapbox(
                     lat=lat_list,

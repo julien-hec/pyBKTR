@@ -1,4 +1,5 @@
 import math
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -13,9 +14,29 @@ class log(float):
         return f'Log({round(math.exp(cls), 10)})'
 
 
+def get_label_index_or_raise(
+    label: Any, label_list: list[Any], label_type: Literal['spatial', 'temporal', 'feature']
+) -> int:
+    """Get the index of a label in a list of labels. If the label is not in the list,
+    raise an error.
+
+    Args:
+        label (Any): The label for which we want to get the index
+        label_list (List[Any]): The list of labels
+        label_type (Literal['spatial', 'temporal', 'feature']): The label type
+
+    Returns:
+        int: The index of the label in the list
+    """
+    try:
+        return label_list.index(label)
+    except ValueError:
+        raise ValueError(f'Label `{label}` does not exist in {label_type} labels.')
+
+
 def reshape_covariate_dfs(spatial_df: pd.DataFrame, temporal_df: pd.DataFrame):
     """
-    Funciton used to transform covariates coming from two dataframes one for spatial and
+    Function used to transform covariates coming from two dataframes one for spatial and
     one for temporal into a single dataframe with the right shape for the BKTR Regressor.
     This is useful when the temporal covariates do not vary trough space and the spatial
     covariates do not vary trough time (Like in the BIXI example).
