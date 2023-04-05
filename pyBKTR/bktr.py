@@ -1,10 +1,11 @@
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 import torch
 
 from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
+from pyBKTR.plots import BKTRBetaPlotMaker
 from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
     KernelParamSampler,
@@ -48,13 +49,13 @@ class BKTRRegressor:
         'max_iter',
         'a_0',
         'b_0',
-        'sampled_beta_indexes',
-        'sampled_y_indexes',
         'results_export_dir',
         'results_export_suffix',
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
+        'spatial_coord',
+        'plot_maker',
     ]
     y: torch.Tensor
     omega: torch.Tensor
@@ -87,13 +88,14 @@ class BKTRRegressor:
     a_0: float
     b_0: float
     # Export Params
-    sampled_beta_indexes: list[int]
-    sampled_y_indexes: list[int]
     results_export_dir: str | None
     # Labels
     spatial_labels: list
     temporal_labels: list
     feature_labels: list
+    spatial_coord: pd.DataFrame
+    # Plot Maker
+    plot_maker: BKTRBetaPlotMaker | None
 
     # Constant string needed for dataframe index names
     spatial_index_name = 'location'
@@ -115,8 +117,6 @@ class BKTRRegressor:
         sigma_r: float = 1e-2,
         a_0: float = 1e-6,
         b_0: float = 1e-6,
-        sampled_beta_indexes: list[int] = [],
-        sampled_y_indexes: list[int] = [],
         results_export_dir: str | None = None,
         results_export_suffix: str | None = None,
     ):
@@ -159,10 +159,6 @@ class BKTRRegressor:
                 function generating tau. Defaults to 1e-6.
             b_0 (float, optional): Initial value for the rate (:math:`\\beta`) in the gamma
                 function generating tau. Defaults to 1e-6.
-            sampled_beta_indexes (list[int], optional): Indexes of beta estimates that need
-                to be sampled through iterations. Defaults to [].
-            sampled_y_indexes (list[int], optional): Indexes of y estimates that need
-                to be sampled through iterations. Defaults to [].
             results_export_dir (str | None, optional): Path of the folder where the csv file
                 will be exported (if None only iteration data is printed). Defaults to None.
             results_export_suffix (str | None, optional): Suffix added at the end of the csv
@@ -206,7 +202,9 @@ class BKTRRegressor:
         self.temporal_labels = (
             covariates_df.index.get_level_values(self.temporal_index_name).unique().to_list()
         )
-        self.feature_labels = covariates_df.columns.to_list()
+        self.feature_labels = ['_intersect_'] + covariates_df.columns.to_list()
+        if spatial_x_df is not None:
+            self.spatial_coord = spatial_x_df.copy()
         # Tensor assignation
         self.omega = TSR.tensor(1 - y_df.isna().to_numpy())
         self.y = TSR.tensor(y_df.to_numpy(na_value=0))
@@ -224,8 +222,6 @@ class BKTRRegressor:
         self.max_iter = self.burn_in_iter + self.sampling_iter
         self.a_0 = a_0
         self.b_0 = b_0
-        self.sampled_beta_indexes = sampled_beta_indexes
-        self.sampled_y_indexes = sampled_y_indexes
         self.results_export_dir = results_export_dir
         self.results_export_suffix = results_export_suffix
 
@@ -264,27 +260,124 @@ class BKTRRegressor:
             self._sample_spatial_decomp()
             self._sample_covariate_decomp()
             self._sample_temporal_decomp()
-            self._set_errors_and_sample_precision_tau()
+            self._set_errors_and_sample_precision_tau(i)
             self._collect_iter_values(i)
         return self._log_iter_results()
 
     @property
-    def beta_estimates(self):
+    def beta_summary_df(self) -> pd.DataFrame:
         if self.result_logger is None:
-            raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
-        return self.result_logger.beta_estimates
+            raise RuntimeError('Beta summary dataframe can only be accessed after MCMC sampling.')
+        return self.result_logger.beta_summary_df
 
     @property
-    def beta_stdev(self):
+    def summary(self) -> pd.DataFrame:
         if self.result_logger is None:
-            raise RuntimeError('Beta standard dev can only be accessed after MCMC sampling.')
-        return self.result_logger.beta_stdev
+            raise RuntimeError('Summary dataframe can only be accessed after MCMC sampling.')
+        return self.result_logger.covariates_summary_df
 
     @property
     def y_estimates(self):
         if self.result_logger is None:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates
+
+    def get_betas_per_iteration(
+        self, spatial_label: Any, temporal_label: Any, feature_label: Any
+    ) -> list[float]:
+        """Return all sampled betas through sampling iterations for a given set of spatial,
+            temporal and feature labels. Useful for plotting the distribution
+            of sampled beta values.
+
+        Args:
+            spatial_label (Any): The spatial label for which we want to get the betas
+            temporal_label (Any): The temporal label for which we want to get the betas
+            feature_label (Any): The feature label for which we want to get the betas
+
+        Returns:
+            torch.Tensor: The sampled betas through iteration for the given labels
+        """
+        if self.result_logger is None:
+            raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
+        beta_per_iter_tensor = self.result_logger.get_betas_per_iteration(
+            spatial_label, temporal_label, feature_label
+        )
+        return list(beta_per_iter_tensor.numpy())
+
+    def plot_temporal_betas(
+        self,
+        plot_feature_labels: list[str],
+        spatial_point_label: str,
+        show_figure: bool = True,
+        fig_width: int = 850,
+        fig_height: int = 550,
+    ):
+        """Create a plot of the beta values through time for a given spatial point and a set of
+            feature labels.
+
+        Args:
+            plot_feature_labels (list[str]): List of feature labels to plot.
+            spatial_point_label (str): Spatial point label to plot.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 850.
+            fig_height (int, optional): Figure height. Defaults to 550.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        self.plot_maker.plot_temporal_betas(
+            plot_feature_labels,
+            spatial_point_label,
+            show_figure,
+            fig_width,
+            fig_height,
+        )
+
+    def plot_spatial_betas(
+        self,
+        plot_feature_labels: list[str],
+        temporal_point_label: str,
+        geo_coordinates: pd.DataFrame | None = None,
+        nb_cols: int = 1,
+        mapbox_zoom: int = 9,
+        use_dark_mode: bool = True,
+        show_figure: bool = True,
+        fig_width: int = 850,
+        fig_height: int = 550,
+    ):
+        """Create a plot of beta values through space for a given temporal point and a set of
+            feature labels.
+
+        Args:
+            plot_feature_labels (list[str]): List of feature labels to plot.
+            temporal_point_label (str): Temporal point label to plot.
+            geo_coordinates (pd.DataFrame): Geo coordinates dataframe. If None, the coordinates
+                are deemed to be passed through the regressor `x_spatial_df`. Defaults to None.
+            nb_cols (int, optional): Number of columns in the plot. Defaults to 1.
+            mapbox_zoom (int, optional): Mapbox zoom. Defaults to 9.
+            use_dark_mode (bool, optional): Whether to use dark mode. Defaults to True.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 850.
+            fig_height (int, optional): Figure height. Defaults to 550.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        if geo_coordinates is None and self.spatial_coord is None:
+            raise RuntimeError(
+                'If `x_spatial_df` is not provided at the bktr regressor creation, then the'
+                ' geo coordinates must be passed to the `create_spatial_beta_plot` method.'
+            )
+        geo_coord = geo_coordinates if geo_coordinates is not None else self.spatial_coord
+        self.plot_maker.plot_spatial_betas(
+            plot_feature_labels,
+            temporal_point_label,
+            geo_coord,
+            nb_cols,
+            mapbox_zoom,
+            use_dark_mode,
+            show_figure,
+            fig_width,
+            fig_height,
+        )
 
     @staticmethod
     def _verify_kernel_labels(
@@ -405,10 +498,12 @@ class BKTRRegressor:
             y=self.y,
             omega=self.omega,
             covariates=self.covariates,
-            nb_iter=self.max_iter,
             nb_burn_in_iter=self.burn_in_iter,
-            sampled_beta_indexes=self.sampled_beta_indexes,
-            sampled_y_indexes=self.sampled_y_indexes,
+            nb_sampling_iter=self.sampling_iter,
+            rank_decomp=self.rank_decomp,
+            spatial_labels=self.spatial_labels,
+            temporal_labels=self.temporal_labels,
+            feature_labels=self.feature_labels,
             results_export_dir=self.results_export_dir,
             results_export_suffix=self.results_export_suffix,
         )
@@ -528,11 +623,11 @@ class BKTRRegressor:
             self.temporal_decomp, ll_eval.chol_lu, ll_eval.uu
         )
 
-    def _set_errors_and_sample_precision_tau(self):
+    def _set_errors_and_sample_precision_tau(self, iter: int):
         """Sample a new tau and set errors"""
-        self.result_logger.set_y_and_beta_estimates(self._decomposition_tensors)
-        error_metrics = self.result_logger._set_error_metrics()
-        self.tau = self.tau_sampler.sample(error_metrics['total_sq_error'])
+        self.result_logger.set_y_and_beta_estimates(self._decomposition_tensors, iter)
+        self.result_logger._set_error_metrics()
+        self.tau = self.tau_sampler.sample(self.result_logger.total_sq_error)
 
     @property
     def _logged_scalar_params(self):
@@ -555,6 +650,13 @@ class BKTRRegressor:
         self.result_logger.collect_iter_samples(iter, self._logged_scalar_params)
 
     def _log_iter_results(self):
+        self.result_logger._set_beta_summary_dfs()
+        self.plot_maker = BKTRBetaPlotMaker(
+            self.result_logger.beta_summary_df,
+            self.spatial_labels,
+            self.temporal_labels,
+            self.feature_labels,
+        )
         return self.result_logger.log_iter_results()
 
     def _initialize_params(self):
