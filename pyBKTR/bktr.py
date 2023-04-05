@@ -282,7 +282,7 @@ class BKTRRegressor:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates
 
-    def get_betas_per_iteration(
+    def get_iteration_betas(
         self, spatial_label: Any, temporal_label: Any, feature_label: Any
     ) -> list[float]:
         """Return all sampled betas through sampling iterations for a given set of spatial,
@@ -299,7 +299,7 @@ class BKTRRegressor:
         """
         if self.result_logger is None:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
-        beta_per_iter_tensor = self.result_logger.get_betas_per_iteration(
+        beta_per_iter_tensor = self.result_logger.get_iterations_betas(
             spatial_label, temporal_label, feature_label
         )
         return list(beta_per_iter_tensor.numpy())
@@ -377,6 +377,29 @@ class BKTRRegressor:
             show_figure,
             fig_width,
             fig_height,
+        )
+
+    def plot_beta_dists(
+        self,
+        labels_list: list[tuple[Any, Any, Any]],
+        show_figure: bool = True,
+        fig_width: int = 900,
+        fig_height: int = 600,
+    ):
+        """Plot the distribution of beta values for a given list of labels.
+
+        Args:
+            labels_list (list[tuple[Any, Any, Any]]): List of labels (spatial, temporal, feature)
+                for which to plot the beta distribution through iterations.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 900.
+            fig_height (int, optional): Figure height. Defaults to 600.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        betas_list = [self.get_iteration_betas(*lab) for lab in labels_list]
+        return self.plot_maker.plot_beta_dists(
+            labels_list, betas_list, show_figure, fig_width, fig_height
         )
 
     @staticmethod

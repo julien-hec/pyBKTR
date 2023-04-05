@@ -212,7 +212,7 @@ class ResultLogger:
             np.savetxt(self._get_file_name('y_estimates'), y_est, delimiter=',')
         return avg_estimates
 
-    def get_betas_per_iteration(
+    def get_iterations_betas(
         self, spatial_label: Any, temporal_label: Any, feature_label: Any
     ) -> torch.Tensor:
         """Return all sampled betas through sampling iterations for a given set of spatial,

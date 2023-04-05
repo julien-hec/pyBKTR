@@ -1,6 +1,7 @@
 import math
 from itertools import cycle
 from textwrap import wrap
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -157,6 +158,43 @@ class BKTRBetaPlotMaker:
             showlegend=False,
             width=fig_width,
             height=fig_height,
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
+    @staticmethod
+    def plot_beta_dists(
+        labels_list: list[tuple[Any, Any, Any]],
+        betas_list: list[list[float]],
+        show_figure: bool = True,
+        fig_width: int = 900,
+        fig_height: int = 600,
+    ):
+        group_names = ['<br>'.join(lab) for lab in labels_list]
+        fig = go.Figure()
+
+        for i, betas in enumerate(betas_list):
+            df = pd.DataFrame({'beta': betas, 'labels': [group_names[i]] * len(betas)})
+            fig.add_trace(
+                go.Violin(
+                    x=df['labels'],
+                    y=df['beta'],
+                    name=group_names[i],
+                    box_visible=True,
+                    meanline_visible=True,
+                )
+            )
+        fig.update_layout(
+            showlegend=False,
+            width=fig_width,
+            height=fig_height,
+            xaxis={'type': 'category'},
+            yaxis_title='Beta Value',
+            title=(
+                'Distribution of beta values for a given spatial point, temporal point and feature'
+            ),
         )
         if show_figure:
             fig.show()
