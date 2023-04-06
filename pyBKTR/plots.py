@@ -1,6 +1,7 @@
 import math
 from itertools import cycle
 from textwrap import wrap
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -21,9 +22,9 @@ class BKTRBetaPlotMaker:
         self,
         plot_feature_labels: list[str],
         spatial_point_label: str,
-        show_figure: bool = True,
-        fig_width: int = 850,
-        fig_height: int = 550,
+        show_figure,
+        fig_width,
+        fig_height,
     ):
         # Verify all labels are valid
         get_label_index_or_raise(spatial_point_label, self.spatial_labels, 'spatial')
@@ -85,12 +86,12 @@ class BKTRBetaPlotMaker:
         plot_feature_labels: list[str],
         temporal_point_label: str,
         geo_coordinates: pd.DataFrame,
-        nb_cols: int = 1,
-        mapbox_zoom: int = 9,
-        use_dark_mode: bool = True,
-        show_figure: bool = True,
-        fig_width: int = 850,
-        fig_height: int = 550,
+        nb_cols: int,
+        mapbox_zoom: int,
+        use_dark_mode: bool,
+        show_figure: bool,
+        fig_width: int,
+        fig_height: int,
     ):
         # Verify all labels are valid
         get_label_index_or_raise(temporal_point_label, self.temporal_labels, 'temporal')
@@ -157,6 +158,43 @@ class BKTRBetaPlotMaker:
             showlegend=False,
             width=fig_width,
             height=fig_height,
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
+    @staticmethod
+    def plot_beta_dists(
+        labels_list: list[tuple[Any, Any, Any]],
+        betas_list: list[list[float]],
+        show_figure: bool,
+        fig_width: int,
+        fig_height: int,
+    ):
+        group_names = ['<br>'.join(lab) for lab in labels_list]
+        fig = go.Figure()
+
+        for i, betas in enumerate(betas_list):
+            df = pd.DataFrame({'beta': betas, 'labels': [group_names[i]] * len(betas)})
+            fig.add_trace(
+                go.Violin(
+                    x=df['labels'],
+                    y=df['beta'],
+                    name=group_names[i],
+                    box_visible=True,
+                    meanline_visible=True,
+                )
+            )
+        fig.update_layout(
+            showlegend=False,
+            width=fig_width,
+            height=fig_height,
+            xaxis={'type': 'category'},
+            yaxis_title='Beta Value',
+            title=(
+                'Distribution of beta values for a given spatial point, temporal point and feature'
+            ),
         )
         if show_figure:
             fig.show()
