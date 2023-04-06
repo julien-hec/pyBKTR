@@ -282,7 +282,7 @@ class BKTRRegressor:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates
 
-    def get_iteration_betas(
+    def get_iterations_betas(
         self, spatial_label: Any, temporal_label: Any, feature_label: Any
     ) -> list[float]:
         """Return all sampled betas through sampling iterations for a given set of spatial,
@@ -397,7 +397,7 @@ class BKTRRegressor:
         """
         if self.plot_maker is None:
             raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        betas_list = [self.get_iteration_betas(*lab) for lab in labels_list]
+        betas_list = [self.get_iterations_betas(*lab) for lab in labels_list]
         return self.plot_maker.plot_beta_dists(
             labels_list, betas_list, show_figure, fig_width, fig_height
         )
