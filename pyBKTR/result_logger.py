@@ -262,8 +262,8 @@ class ResultLogger:
         moment_dim = dim if dim is not None else []
         beta_summaries[0] = beta_values.mean(dim=moment_dim)
         beta_summaries[1] = beta_values.var(dim=moment_dim)
-        beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
-            beta_values, TSR.tensor(cls.quantile_values), dim=dim
+        beta_summaries[len(cls.moment_metrics) :] = TSR.quantile(
+            beta_values, cls.quantile_values, dim=dim
         )
         return beta_summaries
 

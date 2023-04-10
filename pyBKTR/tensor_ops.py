@@ -1,5 +1,6 @@
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -98,3 +99,21 @@ class TSR:
         if input_df is None:
             return None
         return cls.tensor(input_df.to_numpy())
+
+    @classmethod
+    def quantile(cls, values: torch.Tensor, q: torch.Tensor | list, dim: int) -> torch.Tensor:
+        """Function to compute different quantiles of a tensor.
+            Note that this is to fix an issue in pytorch, where quantile does not
+            work with tensors of size over 16M. See:
+                https://github.com/pytorch/pytorch/issues/64947
+
+        Args:
+            values (torch.Tensor): The tensor of values on which to compute the quantiles
+            q (torch.Tensor | list): A tensor list of quantiles to compute
+            dim (int): The dimension along which to compute the quantiles
+
+        Returns:
+            torch.Tensor: The quantile values
+        """
+        quantiles = np.quantile(np.array(values.cpu()), np.array(q), axis=dim)
+        return cls.tensor(quantiles)
