@@ -50,7 +50,7 @@ class ResultLogger:
         '97.5th Percentile',
         'Max',
     ]
-    quantile_values = TSR.tensor([0, 0.025, 0.25, 0.5, 0.75, 0.975, 1])
+    quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
 
     def __init__(
         self,
@@ -263,7 +263,7 @@ class ResultLogger:
         beta_summaries[0] = beta_values.mean(dim=moment_dim)
         beta_summaries[1] = beta_values.var(dim=moment_dim)
         beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
-            beta_values, cls.quantile_values, dim=dim
+            beta_values, TSR.tensor(cls.quantile_values), dim=dim
         )
         return beta_summaries
 
