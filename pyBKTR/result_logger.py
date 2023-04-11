@@ -279,17 +279,32 @@ class ResultLogger:
             [nb_covariates, len(all_metrics), len(self.spatial_labels), len(self.temporal_labels)]
         )
 
+        ini_time = time()
         for c_indx in range(nb_covariates):
-            covs_betas = torch.einsum(
-                'jri,kri,ri->jki',
-                [
-                    self.spatial_decomp_per_iter[:, :, :],
-                    self.temporal_decomp_per_iter[:, :, :],
-                    self.covs_decomp_per_iter[c_indx, :, :],
-                ],
+            # covs_betas = torch.einsum(
+            #     'jri,kri,ri->jki',
+            #     [
+            #         self.spatial_decomp_per_iter[:, :, :],
+            #         self.temporal_decomp_per_iter[:, :, :],
+            #         self.covs_decomp_per_iter[c_indx, :, :],
+            #     ],
+            # )
+            covs_betas = TSR.zeros(
+                [len(self.spatial_labels), len(self.temporal_labels), self.nb_sampling_iter]
             )
+            for s_indx in range(len(self.spatial_labels)):
+                for t_indx in range(len(self.temporal_labels)):
+                    covs_betas[s_indx, t_indx, :] = torch.einsum(
+                        'ri,ri,ri->i',
+                        [
+                            self.spatial_decomp_per_iter[s_indx, :, :],
+                            self.temporal_decomp_per_iter[t_indx, :, :],
+                            self.covs_decomp_per_iter[c_indx, :, :],
+                        ],
+                    )
             covariates_summaries[c_indx] = self._get_beta_values_summary(covs_betas)
             beta_summary[c_indx] = self._get_beta_values_summary(covs_betas, dim=2)
+        print(f'Elapsed time for beta summary: {time() - ini_time:.2f} seconds.')
 
         self.covariates_summary_df = pd.DataFrame(
             covariates_summaries.cpu().numpy(),
