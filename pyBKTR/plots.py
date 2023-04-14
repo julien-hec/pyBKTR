@@ -1,7 +1,7 @@
 import math
 from itertools import cycle
 from textwrap import wrap
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import plotly.express as px
@@ -12,8 +12,14 @@ from pyBKTR.utils import get_label_index_or_raise
 
 
 class BKTRBetaPlotMaker:
-    def __init__(self, beta_summary_df, spatial_labels, temporal_labels, feature_labels) -> None:
-        self.beta_summary_df = beta_summary_df
+    def __init__(
+        self,
+        get_beta_summary_df: Callable,
+        spatial_labels: list[Any],
+        temporal_labels: list[Any],
+        feature_labels: list[Any],
+    ) -> None:
+        self.get_beta_summary_df = get_beta_summary_df
         self.spatial_labels = spatial_labels
         self.temporal_labels = temporal_labels
         self.feature_labels = feature_labels
@@ -35,8 +41,13 @@ class BKTRBetaPlotMaker:
         colorscale_hexas = px.colors.qualitative.Plotly
         color_cycle = cycle(colorscale_hexas)
 
+        beta_summary_df: pd.DataFrame = self.get_beta_summary_df(
+            [spatial_point_label],
+            None,
+            plot_feature_labels,
+        )
         for feature_label in plot_feature_labels:
-            beta_df = self.beta_summary_df.loc[
+            beta_df = beta_summary_df.loc[
                 (spatial_point_label, slice(None), feature_label),
                 ['2.5th Percentile', 'Mean', '97.5th Percentile'],
             ]
@@ -98,8 +109,9 @@ class BKTRBetaPlotMaker:
         for feature_label in plot_feature_labels:
             get_label_index_or_raise(feature_label, self.feature_labels, 'feature')
 
-        beta_df = self.beta_summary_df.loc[
-            (slice(None), temporal_point_label, plot_feature_labels), ['Mean']
+        # TODO use beta_estimates instead
+        beta_df = self.get_beta_summary_df(None, [temporal_point_label], plot_feature_labels)[
+            ['Mean']
         ]
 
         feature_titles = [self.get_feature_title(s) for s in plot_feature_labels]

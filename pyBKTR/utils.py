@@ -34,6 +34,30 @@ def get_label_index_or_raise(
         raise ValueError(f'Label `{label}` does not exist in {label_type} labels.')
 
 
+def get_label_indexes(
+    labels: list[Any],
+    available_labels: list[Any],
+    label_type: Literal['spatial', 'temporal', 'feature'],
+) -> list[int]:
+    """return the indexes of a given set of labels that can be found in a list of available labels
+
+    Args:
+        labels (list[Any]): The labels for which we want to get the indexes
+        available_labels (list[Any]): The list of available labels
+        label_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;, &#39;feature&#39;]): Type
+            of label for which we want to get indexes
+
+    Raises:
+        ValueError: Error if the list of labels is empty
+
+    Returns:
+        list[int]: The indexes of the labels in the list of available labels
+    """
+    if len(labels) == 0:
+        raise ValueError(f'No {label_type} labels provided.')
+    return [get_label_index_or_raise(lab, available_labels, label_type) for lab in labels]
+
+
 def reshape_covariate_dfs(spatial_df: pd.DataFrame, temporal_df: pd.DataFrame):
     """
     Function used to transform covariates coming from two dataframes one for spatial and
