@@ -310,6 +310,12 @@ class BKTRRegressor:
         )[0]
         return list(beta_per_iter_tensor.numpy())
 
+    @property
+    def hparam_per_iter_df(self):
+        if self.result_logger is None:
+            raise RuntimeError('Hyperparameters can only be accessed after MCMC sampling.')
+        return self.result_logger.hparam_per_iter_df
+
     def plot_temporal_betas(
         self,
         plot_feature_labels: list[str],
@@ -555,6 +561,8 @@ class BKTRRegressor:
             spatial_labels=self.spatial_labels,
             temporal_labels=self.temporal_labels,
             feature_labels=self.feature_labels,
+            spatial_kernel=self.spatial_kernel,
+            temporal_kernel=self.temporal_kernel,
             results_export_dir=self.results_export_dir,
             results_export_suffix=self.results_export_suffix,
         )
@@ -681,13 +689,6 @@ class BKTRRegressor:
         self.tau = self.tau_sampler.sample(self.result_logger.total_sq_error)
 
     @property
-    def _logged_scalar_params(self):
-        """Get a dict of current iteration values needed for historical data"""
-        temporal_params = {p.full_name: p.value for p in self.temporal_kernel.parameters}
-        spatial_params = {p.full_name: p.value for p in self.spatial_kernel.parameters}
-        return {'tau': float(self.tau), **temporal_params, **spatial_params}
-
-    @property
     def _decomposition_tensors(self):
         """Get a dict of current iteration decomposition needed to calculate estimated betas"""
         return {
@@ -698,7 +699,7 @@ class BKTRRegressor:
 
     def _collect_iter_values(self, iter: int):
         """Collect current iteration values inside the historical data tensor list"""
-        self.result_logger.collect_iter_samples(iter, self._logged_scalar_params)
+        self.result_logger.collect_iter_samples(iter, float(self.tau))
 
     def _log_final_iter_results(self):
         self.result_logger.log_final_iter_results()
