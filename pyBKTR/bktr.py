@@ -262,7 +262,7 @@ class BKTRRegressor:
             self._sample_temporal_decomp()
             self._set_errors_and_sample_precision_tau(i)
             self._collect_iter_values(i)
-        return self._log_iter_results()
+        self._log_final_iter_results()
 
     @property
     def beta_summary_df(self) -> pd.DataFrame:
@@ -280,7 +280,13 @@ class BKTRRegressor:
     def y_estimates(self):
         if self.result_logger is None:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
-        return self.result_logger.y_estimates
+        return self.result_logger.y_estimates_df
+
+    @property
+    def beta_estimates(self):
+        if self.result_logger is None:
+            raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
+        return self.result_logger.beta_estimates_df
 
     def get_iterations_betas(
         self, spatial_label: Any, temporal_label: Any, feature_label: Any
@@ -295,13 +301,13 @@ class BKTRRegressor:
             feature_label (Any): The feature label for which we want to get the betas
 
         Returns:
-            torch.Tensor: The sampled betas through iteration for the given labels
+            list[float]: The sampled betas through iteration for the given labels
         """
         if self.result_logger is None:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
-        beta_per_iter_tensor = self.result_logger.get_iterations_betas(
-            spatial_label, temporal_label, feature_label
-        )
+        beta_per_iter_tensor = self.result_logger.get_iteration_betas_tensor(
+            [spatial_label], [temporal_label], [feature_label]
+        )[0]
         return list(beta_per_iter_tensor.numpy())
 
     def plot_temporal_betas(
@@ -400,6 +406,28 @@ class BKTRRegressor:
         betas_list = [self.get_iterations_betas(*lab) for lab in labels_list]
         return self.plot_maker.plot_beta_dists(
             labels_list, betas_list, show_figure, fig_width, fig_height
+        )
+
+    def plot_covariates_beta_dists(
+        self,
+        feature_labels: list[Any] | None = None,
+        show_figure: bool = True,
+        fig_width: int = 900,
+        fig_height: int = 600,
+    ):
+        """Plot the distribution of beta estimates regrouped by covariates.
+
+        Args:
+            feature_labels (list[Any] | None, optional): List of feature labels labels for
+                which to plot the beta estimates distribution. If None plot for all features.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 900.
+            fig_height (int, optional): Figure height. Defaults to 600.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        return self.plot_maker.plot_covariates_beta_dists(
+            feature_labels, show_figure, fig_width, fig_height
         )
 
     @staticmethod
@@ -672,15 +700,15 @@ class BKTRRegressor:
         """Collect current iteration values inside the historical data tensor list"""
         self.result_logger.collect_iter_samples(iter, self._logged_scalar_params)
 
-    def _log_iter_results(self):
-        self.result_logger._set_beta_summary_dfs()
+    def _log_final_iter_results(self):
+        self.result_logger.log_final_iter_results()
         self.plot_maker = BKTRBetaPlotMaker(
-            self.result_logger.beta_summary_df,
+            self.result_logger.get_beta_summary_df,
+            self.beta_estimates,
             self.spatial_labels,
             self.temporal_labels,
             self.feature_labels,
         )
-        return self.result_logger.log_iter_results()
 
     def _initialize_params(self):
         """Initialize all parameters that are needed before we start the MCMC sampling"""

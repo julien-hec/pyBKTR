@@ -4,12 +4,11 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import torch
 
 from pyBKTR.tensor_ops import TSR
-from pyBKTR.utils import get_label_index_or_raise
+from pyBKTR.utils import get_label_indexes
 
 
 class ResultLogger:
@@ -19,8 +18,8 @@ class ResultLogger:
         'covariates',
         'nb_burn_in_iter',
         'nb_sampling_iter',
-        'rank_decomp',
         'logged_params_map',
+        'beta_estimates',
         'y_estimates',
         'total_elapsed_time',
         'spatial_labels',
@@ -29,14 +28,16 @@ class ResultLogger:
         'spatial_decomp_per_iter',
         'temporal_decomp_per_iter',
         'covs_decomp_per_iter',
+        'sum_beta_est',
         'sum_y_est',
+        'beta_estimates_df',
+        'y_estimates_df',
+        'beta_covariates_summary_df',
         'last_time_stamp',
         'export_path',
         'export_suffix',
         'error_metrics',
         'total_sq_error',
-        'covariates_summary_df',
-        'beta_summary_df',
     ]
 
     # Metrics used to create beta summaries
@@ -96,6 +97,7 @@ class ResultLogger:
         self.covs_decomp_per_iter = TSR.zeros(
             (len(self.feature_labels), rank_decomp, nb_sampling_iter)
         )
+        self.sum_beta_est = TSR.zeros(covariates.shape)
         self.sum_y_est = TSR.zeros(y.shape)
         self.total_elapsed_time = 0
 
@@ -116,6 +118,7 @@ class ResultLogger:
         elapsed_time_dict = self._get_elapsed_time_dict()
 
         if iter > self.nb_burn_in_iter:
+            self.sum_beta_est += self.beta_estimates
             self.sum_y_est += self.y_estimates
 
         total_logged_params = {
@@ -168,7 +171,7 @@ class ResultLogger:
             self.temporal_decomp_per_iter[:, :, iter_indx] = decomp_tensors_map['temporal_decomp']
             self.covs_decomp_per_iter[:, :, iter_indx] = decomp_tensors_map['covs_decomp']
 
-        beta_estimates = torch.einsum(
+        self.beta_estimates = torch.einsum(
             'im,jm,km->ijk',
             [
                 decomp_tensors_map['spatial_decomp'],
@@ -176,24 +179,11 @@ class ResultLogger:
                 decomp_tensors_map['covs_decomp'],
             ],
         )
-        self.y_estimates = torch.einsum('ijk,ijk->ij', self.covariates, beta_estimates)
+        self.y_estimates = torch.einsum('ijk,ijk->ij', self.covariates, self.beta_estimates)
 
     def _print_iter_result(self, iter: int, result_dict: dict[str, float]):
         formated_results = [f'{k.replace("_", " ")} is {v:7.4f}' for k, v in result_dict.items()]
         print(f'** Result for iter {iter:<5} : {" || ".join(formated_results)} **')
-
-    def _get_and_print_avg_estimates(self) -> dict[str, float | torch.Tensor]:
-        """Calculate the final dictionary of values returned by the MCMC sampling and print them.
-        The final values include the y estimation and the errors.
-
-        Returns:
-            dict [str, float | torch.Tensor]: A dictionary of the MCMC's values of interest
-        """
-        self.y_estimates = self.sum_y_est / self.nb_sampling_iter
-        error_metrics = self._set_error_metrics()
-        iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics
-        self._print_iter_result('TOTAL', iters_summary_dict)
-        return {'y_est': self.y_estimates, **error_metrics}
 
     def _get_file_name(self, export_type_name: str):
         time_now = datetime.now()
@@ -203,44 +193,38 @@ class ResultLogger:
         file_name = '_'.join(name_components)
         return self.export_path.joinpath(f'{file_name}.csv')
 
-    def log_iter_results(self):
+    def log_final_iter_results(self):
+        self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
+        self.y_estimates = self.sum_y_est / self.nb_sampling_iter
+        beta_covariates_summary = self._create_beta_values_summary(
+            self.beta_estimates.reshape(-1, len(self.feature_labels)).cpu(), dim=0
+        )
+        self.beta_covariates_summary_df = pd.DataFrame(
+            beta_covariates_summary.t(),
+            index=self.feature_labels,
+            columns=self.moment_metrics + self.quantile_metrics,
+        )
+        self.y_estimates_df = pd.DataFrame(
+            self.y_estimates.flatten().cpu(),
+            columns=['y_estimate'],
+            index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
+        )
+        self.beta_estimates_df = pd.DataFrame(
+            self.beta_estimates.reshape([-1, len(self.feature_labels)]).cpu(),
+            columns=self.feature_labels,
+            index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
+        )
+        error_metrics = self._set_error_metrics()
+        iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics
+        self._print_iter_result('TOTAL', iters_summary_dict)
         iter_results_df = pd.DataFrame.from_dict(self.logged_params_map)
-        avg_estimates = self._get_and_print_avg_estimates()
         if self.export_path is not None:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
-            y_est = avg_estimates['y_est'].cpu().flatten()
-            np.savetxt(self._get_file_name('y_estimates'), y_est, delimiter=',')
-        return avg_estimates
-
-    def get_iterations_betas(
-        self, spatial_label: Any, temporal_label: Any, feature_label: Any
-    ) -> torch.Tensor:
-        """Return all sampled betas through sampling iterations for a given set of spatial,
-            temporal and feature labels. Useful for plotting the distribution
-            of sampled beta values.
-
-        Args:
-            spatial_label (Any): The spatial label for which we want to get the betas
-            temporal_label (Any): The temporal label for which we want to get the betas
-            feature_label (Any): The feature label for which we want to get the betas
-
-        Returns:
-            torch.Tensor: The sampled betas through iteration for the given labels
-        """
-        spatial_indx = get_label_index_or_raise(spatial_label, self.spatial_labels, 'spatial')
-        temporal_indx = get_label_index_or_raise(temporal_label, self.temporal_labels, 'temporal')
-        cov_indx = get_label_index_or_raise(feature_label, self.feature_labels, 'feature')
-        return torch.einsum(
-            'ri,ri,ri->i',
-            [
-                self.spatial_decomp_per_iter[spatial_indx, :, :],
-                self.temporal_decomp_per_iter[temporal_indx, :, :],
-                self.covs_decomp_per_iter[cov_indx, :, :],
-            ],
-        )
 
     @classmethod
-    def _get_beta_values_summary(cls, beta_values: torch.Tensor, dim: int = None) -> torch.Tensor:
+    def _create_beta_values_summary(
+        cls, beta_values: torch.Tensor, dim: int = None
+    ) -> torch.Tensor:
         """Create a summary for a given tensor of beta values across a given dimension
         for the metrics set in the class.
 
@@ -262,47 +246,56 @@ class ResultLogger:
         moment_dim = dim if dim is not None else []
         beta_summaries[0] = beta_values.mean(dim=moment_dim)
         beta_summaries[1] = beta_values.var(dim=moment_dim)
-        beta_summaries[len(cls.moment_metrics) :] = TSR.quantile(
-            beta_values, cls.quantile_values, dim=dim
+        beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
+            beta_values, TSR.tensor(cls.quantile_values), dim=dim
         )
         return beta_summaries
 
-    def _set_beta_summary_dfs(self):
-        """Create and set two summaries for the betas. The first one is for a covariates summary,
-        (A summary for all sampled betas but regrouped by covariates). The second one is
-        regrouped by spatial and temporal and covariate labels (So just agg through iterations).
+    def get_beta_summary_df(
+        self,
+        spatial_labels: list[Any] = None,
+        temporal_labels: list[Any] = None,
+        feature_labels: list[Any] = None,
+    ) -> pd.DataFrame:
+        """Get a summary of the beta values. If no labels are given, then the summary is for all
+            the betas. If labels are given, then the summary is for the given labels.
+
+        Args:
+            spatial_labels (list[Any], optional): The spatial labels to get the summary for.
+                Defaults to None.
+            temporal_labels (list[Any], optional): The temporal labels to get the summary for.
+                Defaults to None.
+            feature_labels (list[Any], optional): The feature labels to get the summary for.
+                Defaults to None.
+
+        Returns:
+            pd.DataFrame: A dataframe with the summary for the given labels.
         """
-        all_metrics = self.moment_metrics + self.quantile_metrics
-        nb_covariates = len(self.feature_labels)
-        covariates_summaries = TSR.zeros([nb_covariates, len(all_metrics)])
-        beta_summary = TSR.zeros(
-            [nb_covariates, len(all_metrics), len(self.spatial_labels), len(self.temporal_labels)]
+        spatial_labs = spatial_labels if spatial_labels is not None else self.spatial_labels
+        temporal_labs = temporal_labels if temporal_labels is not None else self.temporal_labels
+        feature_labs = feature_labels if feature_labels is not None else self.feature_labels
+        iteration_betas = self.get_iteration_betas_tensor(
+            spatial_labs, temporal_labs, feature_labs
+        )
+        beta_summary = self._create_beta_values_summary(iteration_betas, dim=1).t()
+        return pd.DataFrame(
+            beta_summary.cpu(),
+            columns=self.moment_metrics + self.quantile_metrics,
+            index=pd.MultiIndex.from_product([spatial_labs, temporal_labs, feature_labs]),
         )
 
-        for c_indx in range(nb_covariates):
-            covs_betas = torch.einsum(
-                'jri,kri,ri->jki',
-                [
-                    self.spatial_decomp_per_iter[:, :, :],
-                    self.temporal_decomp_per_iter[:, :, :],
-                    self.covs_decomp_per_iter[c_indx, :, :],
-                ],
-            )
-            covariates_summaries[c_indx] = self._get_beta_values_summary(covs_betas)
-            beta_summary[c_indx] = self._get_beta_values_summary(covs_betas, dim=2)
-
-        self.covariates_summary_df = pd.DataFrame(
-            covariates_summaries.cpu().numpy(),
-            columns=all_metrics,
-            index=self.feature_labels,
+    def get_iteration_betas_tensor(
+        self, spatial_labels: list[Any], temporal_labels: list[Any], feature_labels: list[Any]
+    ) -> torch.Tensor:
+        spatial_indexes = get_label_indexes(spatial_labels, self.spatial_labels, 'spatial')
+        temporal_indexes = get_label_indexes(temporal_labels, self.temporal_labels, 'temporal')
+        feature_indexes = get_label_indexes(feature_labels, self.feature_labels, 'feature')
+        betas_per_iterations = torch.einsum(
+            'sri,tri,cri->stci',
+            [
+                self.spatial_decomp_per_iter[spatial_indexes, :, :],
+                self.temporal_decomp_per_iter[temporal_indexes, :, :],
+                self.covs_decomp_per_iter[feature_indexes, :, :],
+            ],
         )
-        beta_summary = (
-            beta_summary.permute([2, 3, 0, 1]).reshape([-1, len(all_metrics)]).cpu().numpy()
-        )
-        self.beta_summary_df = pd.DataFrame(
-            beta_summary,
-            columns=all_metrics,
-            index=pd.MultiIndex.from_product(
-                [self.spatial_labels, self.temporal_labels, self.feature_labels]
-            ),
-        )
+        return betas_per_iterations.reshape([-1, self.nb_sampling_iter])
