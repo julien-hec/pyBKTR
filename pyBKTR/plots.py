@@ -15,11 +15,13 @@ class BKTRBetaPlotMaker:
     def __init__(
         self,
         get_beta_summary_df: Callable,
+        beta_estimates: pd.DataFrame,
         spatial_labels: list[Any],
         temporal_labels: list[Any],
         feature_labels: list[Any],
     ) -> None:
         self.get_beta_summary_df = get_beta_summary_df
+        self.beta_estimates = beta_estimates
         self.spatial_labels = spatial_labels
         self.temporal_labels = temporal_labels
         self.feature_labels = feature_labels
@@ -109,13 +111,10 @@ class BKTRBetaPlotMaker:
         for feature_label in plot_feature_labels:
             get_label_index_or_raise(feature_label, self.feature_labels, 'feature')
 
-        # TODO use beta_estimates instead
-        beta_df = self.get_beta_summary_df(None, [temporal_point_label], plot_feature_labels)[
-            ['Mean']
-        ]
+        beta_df = self.beta_estimates.loc[(slice(None), temporal_point_label), plot_feature_labels]
 
         feature_titles = [self.get_feature_title(s) for s in plot_feature_labels]
-        min_beta, max_beta = beta_df['Mean'].min(), beta_df['Mean'].max()
+        min_beta, max_beta = beta_df.min().min(), beta_df.max().max()
         nb_subplots = len(plot_feature_labels)
         nb_rows = math.ceil(nb_subplots / nb_cols)
         fig = make_subplots(
@@ -129,10 +128,8 @@ class BKTRBetaPlotMaker:
         lat_list = df_coord['lat'].to_list()
         lon_list = df_coord['lon'].to_list()
         for i, feature_label in enumerate(plot_feature_labels):
-            beta_df_feature = beta_df.loc[
-                (slice(None), temporal_point_label, feature_label), ['Mean']
-            ]
-            beta_col_list = beta_df_feature['Mean'].to_list()
+            beta_df_feature = beta_df.loc[(slice(None), temporal_point_label), feature_label]
+            beta_col_list = beta_df_feature.to_list()
             fig.add_trace(
                 go.Scattermapbox(
                     lat=lat_list,
@@ -207,6 +204,42 @@ class BKTRBetaPlotMaker:
             title=(
                 'Distribution of beta values for a given spatial point, temporal point and feature'
             ),
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
+    def plot_covariates_beta_dists(
+        self,
+        feature_labels: list[str] | None,
+        show_figure: bool,
+        fig_width: int,
+        fig_height: int,
+    ):
+        if feature_labels is None:
+            feature_labels = self.feature_labels
+        fig = go.Figure()
+        for lab in feature_labels:
+            if lab not in self.beta_estimates.columns:
+                raise ValueError(f'Invalid covariate label: {lab}')
+            df = pd.DataFrame({'beta': self.beta_estimates[[lab]][lab].to_list(), 'feature': lab})
+            fig.add_trace(
+                go.Violin(
+                    x=df['feature'],
+                    y=df['beta'],
+                    name=lab,
+                    box_visible=True,
+                    meanline_visible=True,
+                )
+            )
+        fig.update_layout(
+            showlegend=False,
+            width=fig_width,
+            height=fig_height,
+            xaxis={'type': 'category'},
+            yaxis_title='Beta Value',
+            title='Distribution of the beta estimates by feature',
         )
         if show_figure:
             fig.show()
