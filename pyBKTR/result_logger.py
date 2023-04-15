@@ -279,7 +279,7 @@ class ResultLogger:
         )
         beta_summary = self._create_beta_values_summary(iteration_betas, dim=1).t()
         return pd.DataFrame(
-            beta_summary.cpu().numpy(),
+            beta_summary.cpu(),
             columns=self.moment_metrics + self.quantile_metrics,
             index=pd.MultiIndex.from_product([spatial_labs, temporal_labs, feature_labs]),
         )
