@@ -436,6 +436,50 @@ class BKTRRegressor:
             feature_labels, show_figure, fig_width, fig_height
         )
 
+    def plot_hyperparameters_distributions(
+        self,
+        hyperparameters: list[str] | None = None,
+        show_figure: bool = True,
+        fig_width: int = 900,
+        fig_height: int = 600,
+    ):
+        """Plot the distribution of hyper parameters through iterations.
+
+        Args:
+            hyperparameters (list[str] | None, optional): List of hyper parameters to plot.
+                If None, plot all hyper parameters. Defaults to None.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 900.
+            fig_height (int, optional): Figure height. Defaults to 600.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        return self.plot_maker.plot_hyperparameters_distributions(
+            hyperparameters, show_figure, fig_width, fig_height
+        )
+
+    def plot_hyperparameters_per_iter(
+        self,
+        hyperparameters: list[str] | None = None,
+        show_figure: bool = True,
+        fig_width: int = 1100,
+        fig_height: int = 600,
+    ):
+        """Plot the distribution of hyper parameters through iterations.
+
+        Args:
+            hyperparameters (list[str] | None, optional): List of hyper parameters to plot.
+                If None, plot all hyper parameters. Defaults to None.
+            show_figure (bool, optional): Whether to show the figure. Defaults to True.
+            fig_width (int, optional): Figure width. Defaults to 1100.
+            fig_height (int, optional): Figure height. Defaults to 600.
+        """
+        if self.plot_maker is None:
+            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+        return self.plot_maker.plot_hyperparameters_per_iter(
+            hyperparameters, show_figure, fig_width, fig_height
+        )
+
     @staticmethod
     def _verify_kernel_labels(
         kernel_x: pd.DataFrame | None,
@@ -706,6 +750,7 @@ class BKTRRegressor:
         self.plot_maker = BKTRBetaPlotMaker(
             self.result_logger.get_beta_summary_df,
             self.beta_estimates,
+            self.hparam_per_iter_df,
             self.spatial_labels,
             self.temporal_labels,
             self.feature_labels,
