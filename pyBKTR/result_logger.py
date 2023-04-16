@@ -137,6 +137,7 @@ class ResultLogger:
             self.sum_beta_est += self.beta_estimates
             self.sum_y_est += self.y_estimates
 
+            # Collect Hyperparameters
             s_iter = iter - self.nb_burn_in_iter - 1
             s_params = self.spatial_kernel.parameters
             t_params = self.temporal_kernel.parameters
@@ -151,7 +152,6 @@ class ResultLogger:
         total_logged_params = {
             **{'iter': iter},
             **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
-            # **iter_logged_params,
             **self.error_metrics,
             **elapsed_time_dict,
         }
