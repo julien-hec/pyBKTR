@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 import torch
 
+from pyBKTR.kernels import Kernel
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import get_label_indexes
 
@@ -25,6 +26,10 @@ class ResultLogger:
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
+        'spatial_kernel',
+        'temporal_kernel',
+        'hparam_labels',
+        'hparam_per_iter',
         'spatial_decomp_per_iter',
         'temporal_decomp_per_iter',
         'covs_decomp_per_iter',
@@ -33,6 +38,7 @@ class ResultLogger:
         'beta_estimates_df',
         'y_estimates_df',
         'beta_covariates_summary_df',
+        'hparam_per_iter_df',
         'last_time_stamp',
         'export_path',
         'export_suffix',
@@ -64,6 +70,8 @@ class ResultLogger:
         spatial_labels: list,
         temporal_labels: list,
         feature_labels: list,
+        spatial_kernel: Kernel,
+        temporal_kernel: Kernel,
         results_export_dir: str | None = None,
         results_export_suffix: str | None = None,
     ):
@@ -88,6 +96,11 @@ class ResultLogger:
         self.spatial_labels = spatial_labels
         self.temporal_labels = temporal_labels
         self.feature_labels = feature_labels
+        self.hparam_labels = [
+            'Tau',
+            *[f'Spatial - {p.full_name}' for p in spatial_kernel.parameters],
+            *[f'Temporal - {p.full_name}' for p in temporal_kernel.parameters],
+        ]
         self.spatial_decomp_per_iter = TSR.zeros(
             (len(spatial_labels), rank_decomp, nb_sampling_iter)
         )
@@ -97,6 +110,7 @@ class ResultLogger:
         self.covs_decomp_per_iter = TSR.zeros(
             (len(self.feature_labels), rank_decomp, nb_sampling_iter)
         )
+        self.hparam_per_iter = TSR.zeros((len(self.hparam_labels), nb_sampling_iter))
         self.sum_beta_est = TSR.zeros(covariates.shape)
         self.sum_y_est = TSR.zeros(y.shape)
         self.total_elapsed_time = 0
@@ -104,13 +118,15 @@ class ResultLogger:
         self.y = y
         self.omega = omega
         self.covariates = covariates
+        self.spatial_kernel = spatial_kernel
+        self.temporal_kernel = temporal_kernel
         self.nb_burn_in_iter = nb_burn_in_iter
         self.nb_sampling_iter = nb_sampling_iter
 
         # Set initial timer value to calculate iterations' processing time
         self.last_time_stamp = time()
 
-    def collect_iter_samples(self, iter: int, iter_logged_params: dict[str, float]):
+    def collect_iter_samples(self, iter: int, tau_value: float):
         """
         Collect current iteration values inside the historical data tensor list.
         To be noted that errors have already been calculated before tau sampling.
@@ -121,10 +137,21 @@ class ResultLogger:
             self.sum_beta_est += self.beta_estimates
             self.sum_y_est += self.y_estimates
 
+            # Collect Hyperparameters
+            s_iter = iter - self.nb_burn_in_iter - 1
+            s_params = self.spatial_kernel.parameters
+            t_params = self.temporal_kernel.parameters
+            self.hparam_per_iter[0, s_iter] = tau_value
+            self.hparam_per_iter[1 : len(s_params) + 1, s_iter] = TSR.tensor(
+                [p.value for p in s_params]
+            )
+            self.hparam_per_iter[1 + len(s_params) :, s_iter] = TSR.tensor(
+                [p.value for p in t_params]
+            )
+
         total_logged_params = {
             **{'iter': iter},
             **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
-            **iter_logged_params,
             **self.error_metrics,
             **elapsed_time_dict,
         }
@@ -213,6 +240,10 @@ class ResultLogger:
             self.beta_estimates.reshape([-1, len(self.feature_labels)]).cpu(),
             columns=self.feature_labels,
             index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
+        )
+        self.hparam_per_iter_df = pd.DataFrame(
+            self.hparam_per_iter.t().cpu(),
+            columns=self.hparam_labels,
         )
         error_metrics = self._set_error_metrics()
         iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics

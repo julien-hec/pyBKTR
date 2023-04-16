@@ -16,12 +16,14 @@ class BKTRBetaPlotMaker:
         self,
         get_beta_summary_df: Callable,
         beta_estimates: pd.DataFrame,
+        hparam_per_iter_df: pd.DataFrame,
         spatial_labels: list[Any],
         temporal_labels: list[Any],
         feature_labels: list[Any],
     ) -> None:
         self.get_beta_summary_df = get_beta_summary_df
         self.beta_estimates = beta_estimates
+        self.hparam_per_iter_df = hparam_per_iter_df
         self.spatial_labels = spatial_labels
         self.temporal_labels = temporal_labels
         self.feature_labels = feature_labels
@@ -240,6 +242,70 @@ class BKTRBetaPlotMaker:
             xaxis={'type': 'category'},
             yaxis_title='Beta Value',
             title='Distribution of the beta estimates by feature',
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
+    def plot_hyperparameters_distributions(
+        self,
+        hyperparameters,
+        show_figure,
+        fig_width,
+        fig_height,
+    ):
+        hparams = self.hparam_per_iter_df.columns if hyperparameters is None else hyperparameters
+        fig = go.Figure()
+        for hparam in hparams:
+            if hparam not in self.hparam_per_iter_df.columns:
+                formatted_available_params = '\n'.join(self.hparam_per_iter_df.columns)
+                raise ValueError(
+                    f'Hyperparameter {hparam} not found.'
+                    f' Available hyperparameters are:\n{formatted_available_params}'
+                )
+            df = self.hparam_per_iter_df[[hparam]]
+            fig.add_trace(
+                go.Violin(
+                    x=[hparam] * len(df),
+                    y=df[hparam],
+                    name=hparam,
+                    box_visible=True,
+                    meanline_visible=True,
+                )
+            )
+        fig.update_layout(
+            showlegend=False,
+            width=fig_width,
+            height=fig_height,
+            xaxis={'type': 'category'},
+            yaxis_title='Hyperparameter Value',
+            title='Distribution of BKTR hyperparameters',
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
+    def plot_hyperparameters_per_iter(
+        self,
+        hyperparameters: list[str] | None,
+        show_figure: bool,
+        fig_width: int,
+        fig_height: int,
+    ):
+        hparams = self.hparam_per_iter_df.columns if hyperparameters is None else hyperparameters
+        df = self.hparam_per_iter_df[hparams].copy()
+        df['Sampling Iteration'] = df.index + 1
+        df = df.melt(id_vars=['Sampling Iteration'], var_name='Hyperparameter', value_name='Value')
+
+        fig = px.line(df, x='Sampling Iteration', y='Value', color='Hyperparameter')
+        fig.update_layout(
+            width=fig_width,
+            height=fig_height,
+            xaxis={'type': 'category'},
+            yaxis_title='Hyperparameter Value',
+            title='Hyperparameter Values Through Sampling Iterations',
         )
         if show_figure:
             fig.show()
