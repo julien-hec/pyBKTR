@@ -265,21 +265,23 @@ class BKTRRegressor:
         self._log_final_iter_results()
 
     @property
-    def beta_summary_df(self) -> pd.DataFrame:
-        if self.result_logger is None:
-            raise RuntimeError('Beta summary dataframe can only be accessed after MCMC sampling.')
-        return self.result_logger.beta_summary_df
-
-    @property
     def summary(self) -> pd.DataFrame:
         if self.result_logger is None:
             raise RuntimeError('Summary dataframe can only be accessed after MCMC sampling.')
-        return self.result_logger.covariates_summary_df
+        return self.result_logger.beta_covariates_summary_df
 
     @property
-    def y_estimates(self):
+    def y_estimates(self) -> pd.DataFrame:
         if self.result_logger is None:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
+        y_est = self.result_logger.y_estimates_df.copy()
+        y_est['y_estimate'].mask(self.omega.flatten().cpu() == 0, inplace=True)
+        return y_est
+
+    @property
+    def imputed_y_estimates(self) -> pd.DataFrame:
+        if self.result_logger is None:
+            raise RuntimeError('Imputed Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates_df
 
     @property
