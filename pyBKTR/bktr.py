@@ -1,7 +1,10 @@
 from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 import torch
+from formulaic import Formula, model_matrix
+from formulaic.errors import FormulaicError
 
 from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
@@ -51,6 +54,7 @@ class BKTRRegressor:
         'b_0',
         'results_export_dir',
         'results_export_suffix',
+        'formula',
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
@@ -103,11 +107,11 @@ class BKTRRegressor:
 
     def __init__(
         self,
-        covariates_df: pd.DataFrame,
-        y_df: pd.DataFrame,
         rank_decomp: int,
         burn_in_iter: int,
         sampling_iter: int,
+        data_df: pd.DataFrame,
+        formula: None | str = None,
         spatial_kernel: Kernel = KernelMatern(smoothness_factor=3),
         spatial_x_df: None | pd.DataFrame = None,
         spatial_dist_df: None | pd.DataFrame = None,
@@ -129,9 +133,14 @@ class BKTRRegressor:
                 also contain every possible combinations of `location` and `time`
                 (i.e. even missing rows should be filled present but filled with NaN).
                 So if the dataframe has 10 locations and 5 time points, it should have
-                50 rows (10 x 5).
-            y_df (pd.DataFrame): Response variable (`Y`). Variable that we want to
-                predict. A two dimensions dataframe (nb locations x nb time points).
+                50 rows (10 x 5). If formula is None, the dataframe should contain
+                the response variable `Y` as the first column. Note that the covariate
+                columns cannot contain NaN values, but the response variable can.
+            formula (str | None, optional): A Wilkinson formula string to specify the
+                response variate `Y` and the covariates to use (compatible with the Formulaic
+                package).  If None, the first column of the data frame will be used as the
+                response variable and all the other columns will be used as the covariates.
+                Defaults to None.
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
             sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
@@ -171,8 +180,7 @@ class BKTRRegressor:
             ValueError: If `y` columns are different than `covariates_df` time index
         """
         self._verify_input_labels(
-            y_df,
-            covariates_df,
+            data_df,
             spatial_x_df,
             spatial_dist_df,
             temporal_x_df,
@@ -181,8 +189,7 @@ class BKTRRegressor:
 
         # Sort all df indexes
         for df in [
-            y_df,
-            covariates_df,
+            data_df,
             spatial_x_df,
             spatial_dist_df,
             temporal_x_df,
@@ -191,24 +198,28 @@ class BKTRRegressor:
             if df is not None:
                 df.sort_index(inplace=True)
         # Only a subset of dataframes need to have their columns sorted
-        for df in [y_df, spatial_dist_df, temporal_dist_df]:
+        for df in [spatial_dist_df, temporal_dist_df]:
             if df is not None:
                 df.sort_index(axis=1, inplace=True)
 
+        # Set formula and get model's matrix
+        y_df, x_df = self._get_x_and_y_dfs_from_formula(data_df, formula)
+
         # Set labels
         self.spatial_labels = (
-            covariates_df.index.get_level_values(self.spatial_index_name).unique().to_list()
+            y_df.index.get_level_values(self.spatial_index_name).unique().to_list()
         )
         self.temporal_labels = (
-            covariates_df.index.get_level_values(self.temporal_index_name).unique().to_list()
+            y_df.index.get_level_values(self.temporal_index_name).unique().to_list()
         )
-        self.feature_labels = ['_intersect_'] + covariates_df.columns.to_list()
+        self.feature_labels = x_df.columns.to_list()
         if spatial_x_df is not None:
             self.spatial_coord = spatial_x_df.copy()
         # Tensor assignation
-        self.omega = TSR.tensor(1 - y_df.isna().to_numpy())
-        self.y = TSR.tensor(y_df.to_numpy(na_value=0))
-        covariates = TSR.tensor(covariates_df.to_numpy())
+        y_arr = y_df.to_numpy().reshape(len(self.spatial_labels), len(self.temporal_labels))
+        self.omega = TSR.tensor(1 - np.isnan(y_arr))
+        self.y = TSR.tensor(np.where(np.isnan(y_arr), 0, y_arr))
+        covariates = TSR.tensor(x_df.to_numpy())
         self.tau = 1 / TSR.tensor(sigma_r)
         temporal_x_tsr = TSR.get_df_tensor_or_none(temporal_x_df)
         temporal_dist_tsr = TSR.get_df_tensor_or_none(temporal_dist_df)
@@ -275,7 +286,7 @@ class BKTRRegressor:
         if self.result_logger is None:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         y_est = self.result_logger.y_estimates_df.copy()
-        y_est['y_estimate'].mask(self.omega.flatten().cpu() == 0, inplace=True)
+        y_est.iloc[:, 0].mask(self.omega.flatten().cpu() == 0, inplace=True)
         return y_est
 
     @property
@@ -523,8 +534,7 @@ class BKTRRegressor:
     @classmethod
     def _verify_input_labels(
         cls,
-        y: pd.DataFrame,
-        covariates_df: pd.DataFrame,
+        data_df: pd.DataFrame,
         spatial_kernel_x: pd.DataFrame | None,
         spatial_kernel_dist: pd.DataFrame | None,
         temporal_kernel_x: pd.DataFrame | None,
@@ -533,8 +543,7 @@ class BKTRRegressor:
         """Verify the validity of BKTR dataframe inputs' labels
 
         Args:
-            y (pd.DataFrame): y in __init__
-            covariates_df (pd.DataFrame): covariates_df in __init__
+            data_df (pd.DataFrame): data_df in __init__
             spatial_kernel_x (pd.DataFrame | None): spatial_kernel_x in __init__
             spatial_kernel_dist (pd.DataFrame | None): spatial_kernel_dist in __init__
             temporal_kernel_x (pd.DataFrame | None): temporal_kernel_x in __init__
@@ -544,27 +553,52 @@ class BKTRRegressor:
             ValueError: If y index do not correspond with spatial covariates index
             ValueError: If y columns do not correspond with temporal covariates index
         """
-        if covariates_df.index.names != ['location', 'time']:
-            raise ValueError(
-                'The covariates dataframe must have a [`location`, `time`] multiindex.'
-            )
-        loc_set = set(covariates_df.index.get_level_values('location'))
-        time_set = set(covariates_df.index.get_level_values('time'))
+        if data_df.index.names != ['location', 'time']:
+            raise ValueError('The data_df dataframe must have a [`location`, `time`] multiindex.')
+        loc_set = set(data_df.index.get_level_values('location'))
+        time_set = set(data_df.index.get_level_values('time'))
 
-        if len(covariates_df) != len(loc_set) * len(time_set):
+        if len(data_df) != len(loc_set) * len(time_set):
             raise ValueError(
-                'The covariates dataframe must have a row for every possible'
+                'The data_df dataframe must have a row for every possible'
                 ' combination of location and time. Even if values are missing (NaN).'
-            )
-        if loc_set != set(y.index):
-            raise ValueError('The covariates location and the y dataframe index must be the same.')
-        if time_set != set(y.columns):
-            raise ValueError(
-                'The covariates time index should hold the same values as the'
-                'y dataframe column names.'
             )
         cls._verify_kernel_labels(spatial_kernel_x, spatial_kernel_dist, loc_set, 'spatial')
         cls._verify_kernel_labels(temporal_kernel_x, temporal_kernel_dist, time_set, 'temporal')
+
+    def _get_x_and_y_dfs_from_formula(
+        self, data_df: pd.DataFrame, formula: str | None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Use formula to get x and y dataframes.
+
+        Args:
+            data_df (pd.DataFrame): The initial dataframe used to obtain the x and y dataframes.
+            formula (str | None): Formula to give the y and X dataframes matrix. If formula is
+                None, use the first column as y and all other columns as covariates.
+
+        Raises:
+            ValueError: The formula provided is not valid according to the formulaic package.
+
+        Returns:
+            tuple[pd.DataFrame, pd.DataFrame]: The y and x dataframes respectively.
+        """
+        try:
+            if formula is None:
+                covariate_cols = [f'`{x}`' for x in data_df.columns[1:].to_list()]
+                covariate_cols_str = ' + '.join(covariate_cols)
+                self.formula = Formula(f'{data_df.columns[0]} ~ {covariate_cols_str}')
+            else:
+                self.formula = Formula(formula)
+
+            y, x = model_matrix(self.formula, data_df, na_action='ignore')
+        except FormulaicError as e:
+            raise ValueError(
+                'An error linked to the formula parameter occured.'
+                ' Please check the formula syntax to comply with the formulaic package.'
+                '\nFor more info see: https://matthewwardrop.github.io/formulaic/guides/'
+                f'\nThe Formulaic error was:\n\t{e}'
+            )
+        return pd.DataFrame(y), pd.DataFrame(x)
 
     def _reshape_covariates(
         self, covariate_tensor: torch.Tensor, nb_locations: int, nb_times: int
@@ -580,12 +614,9 @@ class BKTRRegressor:
         self.covariates_dim = {
             'nb_spaces': nb_locations,  # S
             'nb_times': nb_times,  # T
-            'nb_covariates': 1 + nb_covariates,  # P
+            'nb_covariates': nb_covariates,  # P
         }
-
-        covs = covariate_tensor.reshape([nb_locations, nb_times, nb_covariates])
-        intersect_covs = TSR.ones([nb_locations, nb_times, 1])
-        self.covariates = torch.dstack([intersect_covs, covs])
+        self.covariates = covariate_tensor.reshape([nb_locations, nb_times, nb_covariates])
 
     def _init_covariate_decomp(self):
         """Initialize CP decomposed covariate tensors with normally distributed random values"""
@@ -604,6 +635,7 @@ class BKTRRegressor:
             nb_burn_in_iter=self.burn_in_iter,
             nb_sampling_iter=self.sampling_iter,
             rank_decomp=self.rank_decomp,
+            formula=self.formula,
             spatial_labels=self.spatial_labels,
             temporal_labels=self.temporal_labels,
             feature_labels=self.feature_labels,
