@@ -15,7 +15,6 @@ class BixiData:
     station_df: pd.DataFrame
     spatial_x_df: pd.DataFrame
     temporal_x_df: pd.DataFrame
-    covariates_df: pd.DataFrame
     data_df: pd.DataFrame
 
     def __init__(self):
@@ -24,10 +23,12 @@ class BixiData:
         self.station_df = self.get_source_df('bixi_station_features')
         self.spatial_x_df = self.get_source_df('bixi_spatial_locations')
         self.temporal_x_df = self.get_source_df('bixi_temporal_locations')
-        self.covariates_df = reshape_covariate_dfs(self.station_df, self.weather_df)
-        # TODO either add Y to the utils method or keep only this df
-        self.data_df = self.covariates_df.sort_index().copy()
-        self.data_df.insert(0, 'nb_departure', self.departure_df.to_numpy().flatten())
+        self.data_df = reshape_covariate_dfs(
+            spatial_df=self.station_df,
+            temporal_df=self.weather_df,
+            y_df=self.departure_df,
+            y_column_name='nb_departure',
+        )
 
     @staticmethod
     def get_source_df(csv_name: str) -> pd.DataFrame:

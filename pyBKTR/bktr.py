@@ -578,6 +578,7 @@ class BKTRRegressor:
 
         Raises:
             ValueError: The formula provided is not valid according to the formulaic package.
+            ValueError: The formula provided does not contain 1 response variable.
 
         Returns:
             tuple[pd.DataFrame, pd.DataFrame]: The y and x dataframes respectively.
@@ -598,7 +599,13 @@ class BKTRRegressor:
                 '\nFor more info see: https://matthewwardrop.github.io/formulaic/guides/'
                 f'\nThe Formulaic error was:\n\t{e}'
             )
-        return pd.DataFrame(y), pd.DataFrame(x)
+        y, x = pd.DataFrame(y), pd.DataFrame(x)
+        if len(y.columns) != 1:
+            raise ValueError(
+                'The formula provided to the regressor is not valid.'
+                ' It must contain one and only one response variable.'
+            )
+        return y, x
 
     def _reshape_covariates(
         self, covariate_tensor: torch.Tensor, nb_locations: int, nb_times: int
