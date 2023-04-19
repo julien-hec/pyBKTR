@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 import torch
+from formulaic import Formula
 
 from pyBKTR.kernels import Kernel
 from pyBKTR.tensor_ops import TSR
@@ -23,6 +24,7 @@ class ResultLogger:
         'beta_estimates',
         'y_estimates',
         'total_elapsed_time',
+        'formula',
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
@@ -67,6 +69,7 @@ class ResultLogger:
         nb_burn_in_iter: int,
         nb_sampling_iter: int,
         rank_decomp: int,
+        formula: Formula,
         spatial_labels: list,
         temporal_labels: list,
         feature_labels: list,
@@ -118,6 +121,7 @@ class ResultLogger:
         self.y = y
         self.omega = omega
         self.covariates = covariates
+        self.formula = formula
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
         self.nb_burn_in_iter = nb_burn_in_iter
@@ -233,7 +237,7 @@ class ResultLogger:
         )
         self.y_estimates_df = pd.DataFrame(
             self.y_estimates.flatten().cpu(),
-            columns=['y_estimate'],
+            columns=[str(self.formula.lhs)],
             index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
         )
         self.beta_estimates_df = pd.DataFrame(
