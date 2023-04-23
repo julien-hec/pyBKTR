@@ -1,14 +1,15 @@
+import textwrap
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from time import time
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import torch
 from formulaic import Formula
 
-from pyBKTR.kernels import Kernel
+from pyBKTR.kernels import Kernel, KernelComposed
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import get_label_indexes
 
@@ -25,6 +26,7 @@ class ResultLogger:
         'y_estimates',
         'total_elapsed_time',
         'formula',
+        'rank_decomp',
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
@@ -52,14 +54,26 @@ class ResultLogger:
     moment_metrics = ['Mean', 'Var']
     quantile_metrics = [
         'Min',
-        '2.5th Percentile',
-        '1st Quartile',
+        'p2.5',
+        'Q1',
         'Median',
-        '3rd Quartile',
-        '97.5th Percentile',
+        'Q3',
+        'p97.5',
         'Max',
     ]
     quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
+
+    # Summary parameters
+    LINE_NCHAR = 79
+    TAB_STR = '  '
+    LINE_SEPARATOR = LINE_NCHAR * '='
+    DF_DISTRIB_STR_PARAMS = {
+        'float_format': '{:,.3f}'.format,
+        'col_space': 7,
+        'line_width': LINE_NCHAR,
+        'max_colwidth': 20,
+        'formatters': {'__index__': lambda x: f'{x:20}'},
+    }
 
     def __init__(
         self,
@@ -101,8 +115,8 @@ class ResultLogger:
         self.feature_labels = feature_labels
         self.hparam_labels = [
             'Tau',
-            *[f'Spatial - {p.full_name}' for p in spatial_kernel.parameters],
-            *[f'Temporal - {p.full_name}' for p in temporal_kernel.parameters],
+            *[f'Spatial - {p.full_name}' for p in spatial_kernel.parameters if not p.is_fixed],
+            *[f'Temporal - {p.full_name}' for p in temporal_kernel.parameters if not p.is_fixed],
         ]
         self.spatial_decomp_per_iter = TSR.zeros(
             (len(spatial_labels), rank_decomp, nb_sampling_iter)
@@ -122,6 +136,7 @@ class ResultLogger:
         self.omega = omega
         self.covariates = covariates
         self.formula = formula
+        self.rank_decomp = rank_decomp
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
         self.nb_burn_in_iter = nb_burn_in_iter
@@ -143,8 +158,8 @@ class ResultLogger:
 
             # Collect Hyperparameters
             s_iter = iter - self.nb_burn_in_iter - 1
-            s_params = self.spatial_kernel.parameters
-            t_params = self.temporal_kernel.parameters
+            s_params = [p for p in self.spatial_kernel.parameters if not p.is_fixed]
+            t_params = [p for p in self.temporal_kernel.parameters if not p.is_fixed]
             self.hparam_per_iter[0, s_iter] = tau_value
             self.hparam_per_iter[1 : len(s_params) + 1, s_iter] = TSR.tensor(
                 [p.value for p in s_params]
@@ -334,3 +349,122 @@ class ResultLogger:
             ],
         )
         return betas_per_iterations.reshape([-1, self.nb_sampling_iter])
+
+    def summary(self) -> str:
+        """Print a summary of the BKTR regressor.
+
+        Returns:
+            str: A string representation of the BKTR regressor after MCMC sampling.
+        """
+        title_format = f'^{self.LINE_NCHAR}'
+        summary_str = [
+            '',
+            self.LINE_SEPARATOR,
+            '',
+            f'{"BKTR Regressor Summary":{title_format}}',
+            '',
+            self.LINE_SEPARATOR,
+            self._get_formula_str(),
+            '',
+            f'Burn-in iterations: {self.nb_burn_in_iter}',
+            f'Sampling iterations: {self.nb_sampling_iter}',
+            f'Rank decomposition: {self.rank_decomp}',
+            f'Nb Spatial Locations: {len(self.spatial_labels)}',
+            f'Nb Temporal Points: {len(self.temporal_labels)}',
+            f'Nb Covariates: {len(self.feature_labels)}',
+            self.LINE_SEPARATOR,
+            'In Sample Errors:',
+            f'{self.TAB_STR}RMSE: {self.error_metrics["RMSE"]:.3f}',
+            f'{self.TAB_STR}MAE: {self.error_metrics["MAE"]:.3f}',
+            f'Computation time: {self.total_elapsed_time:.2f}s.',
+            self.LINE_SEPARATOR,
+            'Kernels',
+            '',
+            '-- Spatial Kernel --',
+            self._kernel_summary(self.spatial_kernel, 'spatial'),
+            '',
+            '-- Temporal Kernel --',
+            self._kernel_summary(self.temporal_kernel, 'temporal'),
+            self.LINE_SEPARATOR,
+            self._beta_summary(),
+            self.LINE_SEPARATOR,
+            '',
+        ]
+        return '\n'.join(summary_str)
+
+    def _get_formula_str(self) -> str:
+        formula_str = f'Formula: {self.formula.lhs} ~ {self.formula.rhs}'
+        f_wrap = textwrap.wrap(formula_str, width=self.LINE_NCHAR, subsequent_indent=self.TAB_STR)
+        return '\n'.join(f_wrap)
+
+    def _kernel_summary(
+        self, kernel: Kernel, kernel_type: Literal['spatial', 'temporal'], indent_count=0
+    ) -> str:
+        """Get a string representation of a given kernel. Since the kernel can be composed, this
+            function needs to be recursive.
+
+
+        Args:
+            kernel (Kernel): The kernel to get the summary for.
+            kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): The type of kernel.
+            indent_count (int, optional): Indentation level (related to the depth of composition).
+                Defaults to 0.
+
+        Returns:
+            str: A string representation of the kernel. Containing the name of the kernel,
+                the estimated parameters distribution and the fixed parameters.
+        """
+        params = kernel.parameters
+        if kernel.__class__ == KernelComposed:
+            new_ind_nb = indent_count + 1
+            kernel_elems = [
+                f'Composed Kernel ({str(kernel.composition_operation.value).capitalize()})',
+                f'{self._kernel_summary(kernel.left_kernel, kernel_type, new_ind_nb)}',
+                f'{self.TAB_STR}{"+" if kernel.composition_operation == "add" else "*"}',
+                f'{self._kernel_summary(kernel.right_kernel, kernel_type, new_ind_nb)}',
+            ]
+        else:
+            fixed_params = [p for p in params if p.is_fixed]
+            sampled_params = [p for p in params if not p.is_fixed]
+            sampled_par_indexes = [
+                self.hparam_labels.index(f'{kernel_type.capitalize()} - {p.full_name}')
+                for p in sampled_params
+            ]
+            sampled_par_tsr = self.hparam_per_iter[sampled_par_indexes, :]
+            sampled_par_summary = self._create_beta_values_summary(sampled_par_tsr, dim=1)
+            sampled_par_df = pd.DataFrame(
+                sampled_par_summary.cpu().t(),
+                columns=self.moment_metrics + self.quantile_metrics,
+                index=[p.name for p in sampled_params],
+            )[['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']]
+            sampled_params_str = sampled_par_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
+            constant_params_strs = [
+                f'{p.name:20}   Fixed Value: {p.value:.1f}' for p in fixed_params
+            ]
+            kernel_elems = [
+                kernel._name,
+                'Parameter(s):',
+                sampled_params_str,
+                *constant_params_strs,
+            ]
+        kernel_str = '\n'.join(kernel_elems)
+        return textwrap.indent(kernel_str, self.TAB_STR * indent_count)
+
+    def _beta_summary(self) -> str:
+        """Get a string representation of the beta estimates aggregated per covariates.
+            (This shows the distribution of the beta hats per covariates)
+
+        Returns:
+            str: A string representation of the beta estimates.
+        """
+
+        distrib_df = self.beta_covariates_summary_df[
+            ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
+        ].copy()
+        beta_distrib_str = distrib_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
+        beta_summary_str = [
+            'Beta Estimates Summary (Aggregated Per Covariates)',
+            '',
+            beta_distrib_str,
+        ]
+        return '\n'.join(beta_summary_str)
