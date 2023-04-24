@@ -74,6 +74,7 @@ class ResultLogger:
         'max_colwidth': 20,
         'formatters': {'__index__': lambda x: f'{x:20}'},
     }
+    DISTRIB_COLS = ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
 
     def __init__(
         self,
@@ -242,7 +243,7 @@ class ResultLogger:
     def log_final_iter_results(self):
         self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
         self.y_estimates = self.sum_y_est / self.nb_sampling_iter
-        beta_covariates_summary = self._create_beta_values_summary(
+        beta_covariates_summary = self._create_distrib_values_summary(
             self.beta_estimates.reshape(-1, len(self.feature_labels)).cpu(), dim=0
         )
         self.beta_covariates_summary_df = pd.DataFrame(
@@ -272,14 +273,12 @@ class ResultLogger:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
 
     @classmethod
-    def _create_beta_values_summary(
-        cls, beta_values: torch.Tensor, dim: int = None
-    ) -> torch.Tensor:
+    def _create_distrib_values_summary(cls, values: torch.Tensor, dim: int = None) -> torch.Tensor:
         """Create a summary for a given tensor of beta values across a given dimension
         for the metrics set in the class.
 
         Args:
-            beta_values (torch.Tensor): Beta values to summarize
+            values (torch.Tensor): Values to summarize
             dim (int, optional): Dimension of the tensor we want to summaryize. If None,
                 we want to summarize the whole tensor and flatten it. Defaults to None.
 
@@ -289,15 +288,15 @@ class ResultLogger:
         all_metrics = cls.moment_metrics + cls.quantile_metrics
         summary_shape = [len(all_metrics)]
         if dim is not None:
-            beta_val_shape = list(beta_values.shape)
+            beta_val_shape = list(values.shape)
             summary_shape = summary_shape + beta_val_shape[:dim] + beta_val_shape[dim + 1 :]
         beta_summaries = TSR.zeros(summary_shape)
         # Dimension for moment calculations are a bit different than for quantile
         moment_dim = dim if dim is not None else []
-        beta_summaries[0] = beta_values.mean(dim=moment_dim)
-        beta_summaries[1] = beta_values.var(dim=moment_dim)
+        beta_summaries[0] = values.mean(dim=moment_dim)
+        beta_summaries[1] = values.var(dim=moment_dim)
         beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
-            beta_values, TSR.tensor(cls.quantile_values), dim=dim
+            values, TSR.tensor(cls.quantile_values), dim=dim
         )
         return beta_summaries
 
@@ -327,7 +326,7 @@ class ResultLogger:
         iteration_betas = self.get_iteration_betas_tensor(
             spatial_labs, temporal_labs, feature_labs
         )
-        beta_summary = self._create_beta_values_summary(iteration_betas, dim=1).t()
+        beta_summary = self._create_distrib_values_summary(iteration_betas, dim=1).t()
         return pd.DataFrame(
             beta_summary.cpu(),
             columns=self.moment_metrics + self.quantile_metrics,
@@ -431,15 +430,15 @@ class ResultLogger:
                 for p in sampled_params
             ]
             sampled_par_tsr = self.hparam_per_iter[sampled_par_indexes, :]
-            sampled_par_summary = self._create_beta_values_summary(sampled_par_tsr, dim=1)
+            sampled_par_summary = self._create_distrib_values_summary(sampled_par_tsr, dim=1)
             sampled_par_df = pd.DataFrame(
                 sampled_par_summary.cpu().t(),
                 columns=self.moment_metrics + self.quantile_metrics,
                 index=[p.name for p in sampled_params],
-            )[['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']]
+            )[self.DISTRIB_COLS]
             sampled_params_str = sampled_par_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
             constant_params_strs = [
-                f'{p.name:20}   Fixed Value: {p.value:.1f}' for p in fixed_params
+                f'{p.name:20}   Fixed Value: {p.value:.3f}' for p in fixed_params
             ]
             kernel_elems = [
                 kernel._name,
@@ -458,9 +457,7 @@ class ResultLogger:
             str: A string representation of the beta estimates.
         """
 
-        distrib_df = self.beta_covariates_summary_df[
-            ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
-        ].copy()
+        distrib_df = self.beta_covariates_summary_df[self.DISTRIB_COLS].copy()
         beta_distrib_str = distrib_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
         beta_summary_str = [
             'Beta Estimates Summary (Aggregated Per Covariates)',
