@@ -276,9 +276,26 @@ class BKTRRegressor:
         self._log_final_iter_results()
 
     @property
-    def summary(self) -> pd.DataFrame:
+    def summary(self) -> str:
+        """Returns a summary of the MCMC regressor results
+
+        Raises:
+            RuntimeError: If the MCMC sampling has not been run yet
+
+        Returns:
+            str: A summary of the MCMC regressor results containing information about the
+                MCMC sampling process and the estimated model's parameters.
+        """
         if self.result_logger is None:
-            raise RuntimeError('Summary dataframe can only be accessed after MCMC sampling.')
+            raise RuntimeError('Summary can only be accessed after MCMC sampling.')
+        return self.result_logger.summary()
+
+    @property
+    def beta_covariates_summary_df(self) -> pd.DataFrame:
+        if self.result_logger is None:
+            raise RuntimeError(
+                'Covariate summary dataframe can only be accessed after MCMC sampling.'
+            )
         return self.result_logger.beta_covariates_summary_df
 
     @property
@@ -561,7 +578,7 @@ class BKTRRegressor:
         if len(data_df) != len(loc_set) * len(time_set):
             raise ValueError(
                 'The data_df dataframe must have a row for every possible'
-                ' combination of location and time. Even if values are missing (NaN).'
+                ' combination of location and time. Even if response values are missing (NaN).'
             )
         cls._verify_kernel_labels(spatial_kernel_x, spatial_kernel_dist, loc_set, 'spatial')
         cls._verify_kernel_labels(temporal_kernel_x, temporal_kernel_dist, time_set, 'temporal')

@@ -53,7 +53,7 @@ def run_bixi_bktr(
     bixi_data = BixiData()
 
     temporal_kernel = (
-        KernelPeriodic(period_length=KernelParameter(7, 'period length', is_constant=True))
+        KernelPeriodic(period_length=KernelParameter(7, 'period length', is_fixed=True))
         * KernelSE()
     )
     spatial_kernel = KernelMatern(smoothness_factor=3, distance_type=DIST_TYPE.HAVERSINE)

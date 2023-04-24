@@ -22,8 +22,8 @@ class KernelParameter:
     """The hyperparameter mean's prior value (Paper -- :math:`\\phi`) or its constant value"""
     name: str
     """The name of the paramater (used in logging and in kernel representation)"""
-    is_constant: bool = False
-    """Says if the kernel parameter is constant or not (if it is constant, there is no sampling)"""
+    is_fixed: bool = False
+    """Says if the kernel parameter is fixed or not (if it is fixed, there is no sampling)"""
     lower_bound: float = DEFAULT_LBOUND
     """The hyperparameter's minimal admissible value in sampling (Paper -- :math:`\\phi_{min}`)"""
     upper_bound: float = DEFAULT_UBOUND
@@ -39,7 +39,7 @@ class KernelParameter:
         self,
         value: float,
         name: str,
-        is_constant: bool = False,
+        is_fixed: bool = False,
         lower_bound: float = DEFAULT_LBOUND,
         upper_bound: float = DEFAULT_UBOUND,
         slice_sampling_scale: float = log(10),
@@ -49,14 +49,13 @@ class KernelParameter:
         self.name = name
         self.lower_bound = lower_bound
         self.uppder_bound = upper_bound
-        self.is_constant = is_constant
+        self.is_fixed = is_fixed
         self.slice_sampling_scale = slice_sampling_scale
         self.hparam_precision = hparam_precision
 
     def set_kernel(self, kernel: Kernel):
         self.kernel = kernel
-        if not self.is_constant:
-            self.kernel.parameters.append(self)
+        self.kernel.parameters.append(self)
 
     @property
     def full_name(self) -> str:
@@ -66,7 +65,7 @@ class KernelParameter:
 
     def __repr__(self):
         rep_attrs = [f'val={self.value}']
-        if self.is_constant:
+        if self.is_fixed:
             rep_attrs.append('is_const=True')
         if self.lower_bound != DEFAULT_LBOUND:
             rep_attrs.append(f'lbound={self.lower_bound}')
@@ -143,7 +142,7 @@ class KernelWhiteNoise(Kernel):
 
     def __init__(
         self,
-        variance: KernelParameter = KernelParameter(1, 'variance', is_constant=True),
+        variance: KernelParameter = KernelParameter(1, 'variance', is_fixed=True),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
@@ -251,7 +250,6 @@ class KernelPeriodic(Kernel):
 
 
 class KernelMatern(Kernel):
-    _name: str = 'Matern Kernel'
     lengthscale: KernelParameter
     smoothness_factor: Literal[1, 3, 5]
 
@@ -269,6 +267,10 @@ class KernelMatern(Kernel):
         self.smoothness_factor = smoothness_factor
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self)
+
+    @property
+    def _name(self) -> str:
+        return f'Matern {self.smoothness_factor}/2 Kernel'
 
     @cached_property
     def smoothness_kernel_fn(self) -> Callable:

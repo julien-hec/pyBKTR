@@ -53,13 +53,13 @@ class BKTRBetaPlotMaker:
         for feature_label in plot_feature_labels:
             beta_df = beta_summary_df.loc[
                 (spatial_point_label, slice(None), feature_label),
-                ['2.5th Percentile', 'Mean', '97.5th Percentile'],
+                ['p2.5', 'Mean', 'p97.5'],
             ]
             col_title = feature_label.replace('_', ' ').title()
             line_color = next(color_cycle)
             fill_rgba = self.hex_to_rgba(line_color, 0.2)
-            pctl_025 = beta_df['2.5th Percentile'].to_list()
-            pctl_975 = beta_df['97.5th Percentile'].to_list()
+            pctl_025 = beta_df['p2.5'].to_list()
+            pctl_975 = beta_df['p97.5'].to_list()
 
             scatters.extend(
                 [

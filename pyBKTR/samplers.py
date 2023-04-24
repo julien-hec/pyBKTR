@@ -75,7 +75,8 @@ class KernelParamSampler:
 
     def sample(self):
         for param in self.kernel.parameters:
-            self.sample_param(param)
+            if not param.is_fixed:
+                self.sample_param(param)
 
 
 def sample_norm_multivariate(

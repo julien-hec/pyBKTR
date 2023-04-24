@@ -1,14 +1,15 @@
+import textwrap
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from time import time
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 import torch
 from formulaic import Formula
 
-from pyBKTR.kernels import Kernel
+from pyBKTR.kernels import Kernel, KernelComposed
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import get_label_indexes
 
@@ -25,6 +26,7 @@ class ResultLogger:
         'y_estimates',
         'total_elapsed_time',
         'formula',
+        'rank_decomp',
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
@@ -52,14 +54,27 @@ class ResultLogger:
     moment_metrics = ['Mean', 'Var']
     quantile_metrics = [
         'Min',
-        '2.5th Percentile',
-        '1st Quartile',
+        'p2.5',
+        'Q1',
         'Median',
-        '3rd Quartile',
-        '97.5th Percentile',
+        'Q3',
+        'p97.5',
         'Max',
     ]
     quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
+
+    # Summary parameters
+    LINE_NCHAR = 79
+    TAB_STR = '  '
+    LINE_SEPARATOR = LINE_NCHAR * '='
+    DF_DISTRIB_STR_PARAMS = {
+        'float_format': '{:,.3f}'.format,
+        'col_space': 7,
+        'line_width': LINE_NCHAR,
+        'max_colwidth': 20,
+        'formatters': {'__index__': lambda x: f'{x:20}'},
+    }
+    DISTRIB_COLS = ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
 
     def __init__(
         self,
@@ -101,8 +116,8 @@ class ResultLogger:
         self.feature_labels = feature_labels
         self.hparam_labels = [
             'Tau',
-            *[f'Spatial - {p.full_name}' for p in spatial_kernel.parameters],
-            *[f'Temporal - {p.full_name}' for p in temporal_kernel.parameters],
+            *[f'Spatial - {p.full_name}' for p in spatial_kernel.parameters if not p.is_fixed],
+            *[f'Temporal - {p.full_name}' for p in temporal_kernel.parameters if not p.is_fixed],
         ]
         self.spatial_decomp_per_iter = TSR.zeros(
             (len(spatial_labels), rank_decomp, nb_sampling_iter)
@@ -122,6 +137,7 @@ class ResultLogger:
         self.omega = omega
         self.covariates = covariates
         self.formula = formula
+        self.rank_decomp = rank_decomp
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
         self.nb_burn_in_iter = nb_burn_in_iter
@@ -143,8 +159,8 @@ class ResultLogger:
 
             # Collect Hyperparameters
             s_iter = iter - self.nb_burn_in_iter - 1
-            s_params = self.spatial_kernel.parameters
-            t_params = self.temporal_kernel.parameters
+            s_params = [p for p in self.spatial_kernel.parameters if not p.is_fixed]
+            t_params = [p for p in self.temporal_kernel.parameters if not p.is_fixed]
             self.hparam_per_iter[0, s_iter] = tau_value
             self.hparam_per_iter[1 : len(s_params) + 1, s_iter] = TSR.tensor(
                 [p.value for p in s_params]
@@ -227,7 +243,7 @@ class ResultLogger:
     def log_final_iter_results(self):
         self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
         self.y_estimates = self.sum_y_est / self.nb_sampling_iter
-        beta_covariates_summary = self._create_beta_values_summary(
+        beta_covariates_summary = self._create_distrib_values_summary(
             self.beta_estimates.reshape(-1, len(self.feature_labels)).cpu(), dim=0
         )
         self.beta_covariates_summary_df = pd.DataFrame(
@@ -257,14 +273,12 @@ class ResultLogger:
             iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
 
     @classmethod
-    def _create_beta_values_summary(
-        cls, beta_values: torch.Tensor, dim: int = None
-    ) -> torch.Tensor:
+    def _create_distrib_values_summary(cls, values: torch.Tensor, dim: int = None) -> torch.Tensor:
         """Create a summary for a given tensor of beta values across a given dimension
         for the metrics set in the class.
 
         Args:
-            beta_values (torch.Tensor): Beta values to summarize
+            values (torch.Tensor): Values to summarize
             dim (int, optional): Dimension of the tensor we want to summaryize. If None,
                 we want to summarize the whole tensor and flatten it. Defaults to None.
 
@@ -274,15 +288,15 @@ class ResultLogger:
         all_metrics = cls.moment_metrics + cls.quantile_metrics
         summary_shape = [len(all_metrics)]
         if dim is not None:
-            beta_val_shape = list(beta_values.shape)
+            beta_val_shape = list(values.shape)
             summary_shape = summary_shape + beta_val_shape[:dim] + beta_val_shape[dim + 1 :]
         beta_summaries = TSR.zeros(summary_shape)
         # Dimension for moment calculations are a bit different than for quantile
         moment_dim = dim if dim is not None else []
-        beta_summaries[0] = beta_values.mean(dim=moment_dim)
-        beta_summaries[1] = beta_values.var(dim=moment_dim)
+        beta_summaries[0] = values.mean(dim=moment_dim)
+        beta_summaries[1] = values.var(dim=moment_dim)
         beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
-            beta_values, TSR.tensor(cls.quantile_values), dim=dim
+            values, TSR.tensor(cls.quantile_values), dim=dim
         )
         return beta_summaries
 
@@ -312,7 +326,7 @@ class ResultLogger:
         iteration_betas = self.get_iteration_betas_tensor(
             spatial_labs, temporal_labs, feature_labs
         )
-        beta_summary = self._create_beta_values_summary(iteration_betas, dim=1).t()
+        beta_summary = self._create_distrib_values_summary(iteration_betas, dim=1).t()
         return pd.DataFrame(
             beta_summary.cpu(),
             columns=self.moment_metrics + self.quantile_metrics,
@@ -334,3 +348,120 @@ class ResultLogger:
             ],
         )
         return betas_per_iterations.reshape([-1, self.nb_sampling_iter])
+
+    def summary(self) -> str:
+        """Print a summary of the BKTR regressor.
+
+        Returns:
+            str: A string representation of the BKTR regressor after MCMC sampling.
+        """
+        title_format = f'^{self.LINE_NCHAR}'
+        summary_str = [
+            '',
+            self.LINE_SEPARATOR,
+            '',
+            f'{"BKTR Regressor Summary":{title_format}}',
+            '',
+            self.LINE_SEPARATOR,
+            self._get_formula_str(),
+            '',
+            f'Burn-in iterations: {self.nb_burn_in_iter}',
+            f'Sampling iterations: {self.nb_sampling_iter}',
+            f'Rank decomposition: {self.rank_decomp}',
+            f'Nb Spatial Locations: {len(self.spatial_labels)}',
+            f'Nb Temporal Points: {len(self.temporal_labels)}',
+            f'Nb Covariates: {len(self.feature_labels)}',
+            self.LINE_SEPARATOR,
+            'In Sample Errors:',
+            f'{self.TAB_STR}RMSE: {self.error_metrics["RMSE"]:.3f}',
+            f'{self.TAB_STR}MAE: {self.error_metrics["MAE"]:.3f}',
+            f'Computation time: {self.total_elapsed_time:.2f}s.',
+            self.LINE_SEPARATOR,
+            'Kernels',
+            '',
+            '-- Spatial Kernel --',
+            self._kernel_summary(self.spatial_kernel, 'spatial'),
+            '',
+            '-- Temporal Kernel --',
+            self._kernel_summary(self.temporal_kernel, 'temporal'),
+            self.LINE_SEPARATOR,
+            self._beta_summary(),
+            self.LINE_SEPARATOR,
+            '',
+        ]
+        return '\n'.join(summary_str)
+
+    def _get_formula_str(self) -> str:
+        formula_str = f'Formula: {self.formula.lhs} ~ {self.formula.rhs}'
+        f_wrap = textwrap.wrap(formula_str, width=self.LINE_NCHAR, subsequent_indent=self.TAB_STR)
+        return '\n'.join(f_wrap)
+
+    def _kernel_summary(
+        self, kernel: Kernel, kernel_type: Literal['spatial', 'temporal'], indent_count=0
+    ) -> str:
+        """Get a string representation of a given kernel. Since the kernel can be composed, this
+            function needs to be recursive.
+
+
+        Args:
+            kernel (Kernel): The kernel to get the summary for.
+            kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): The type of kernel.
+            indent_count (int, optional): Indentation level (related to the depth of composition).
+                Defaults to 0.
+
+        Returns:
+            str: A string representation of the kernel. Containing the name of the kernel,
+                the estimated parameters distribution and the fixed parameters.
+        """
+        params = kernel.parameters
+        if kernel.__class__ == KernelComposed:
+            new_ind_nb = indent_count + 1
+            kernel_elems = [
+                f'Composed Kernel ({str(kernel.composition_operation.value).capitalize()})',
+                f'{self._kernel_summary(kernel.left_kernel, kernel_type, new_ind_nb)}',
+                f'{self.TAB_STR}{"+" if kernel.composition_operation == "add" else "*"}',
+                f'{self._kernel_summary(kernel.right_kernel, kernel_type, new_ind_nb)}',
+            ]
+        else:
+            fixed_params = [p for p in params if p.is_fixed]
+            sampled_params = [p for p in params if not p.is_fixed]
+            sampled_par_indexes = [
+                self.hparam_labels.index(f'{kernel_type.capitalize()} - {p.full_name}')
+                for p in sampled_params
+            ]
+            sampled_par_tsr = self.hparam_per_iter[sampled_par_indexes, :]
+            sampled_par_summary = self._create_distrib_values_summary(sampled_par_tsr, dim=1)
+            sampled_par_df = pd.DataFrame(
+                sampled_par_summary.cpu().t(),
+                columns=self.moment_metrics + self.quantile_metrics,
+                index=[p.name for p in sampled_params],
+            )[self.DISTRIB_COLS]
+            sampled_params_str = sampled_par_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
+            constant_params_strs = [
+                f'{p.name:20}   Fixed Value: {p.value:.3f}' for p in fixed_params
+            ]
+            kernel_elems = [
+                kernel._name,
+                'Parameter(s):',
+                sampled_params_str,
+                *constant_params_strs,
+            ]
+        kernel_str = '\n'.join(kernel_elems)
+        return textwrap.indent(kernel_str, self.TAB_STR * indent_count)
+
+    def _beta_summary(self) -> str:
+        """Get a string representation of the beta estimates aggregated per covariates.
+            (This shows the distribution of the beta hats per covariates)
+
+        Returns:
+            str: A string representation of the beta estimates.
+        """
+
+        distrib_df = self.beta_covariates_summary_df[self.DISTRIB_COLS].copy()
+        beta_distrib_str = distrib_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
+        beta_summary_str = [
+            'Beta Estimates Summary (Aggregated Per Covariates)',
+            '',
+            beta_distrib_str,
+        ]
+        return '\n'.join(beta_summary_str)
