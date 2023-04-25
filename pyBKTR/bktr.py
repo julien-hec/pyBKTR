@@ -340,11 +340,37 @@ class BKTRRegressor:
         )[0]
         return list(beta_per_iter_tensor.numpy())
 
+    def get_beta_summary_df(
+        self,
+        spatial_labels: list[Any] = None,
+        temporal_labels: list[Any] = None,
+        feature_labels: list[Any] = None,
+    ) -> pd.DataFrame:
+        """Get a summary of the beta values. If no labels are given, then the summary is for all
+            the betas. If labels are given, then the summary is for the given labels.
+
+        Args:
+            spatial_labels (list[Any], optional): The spatial labels to get the summary for.
+                Defaults to None.
+            temporal_labels (list[Any], optional): The temporal labels to get the summary for.
+                Defaults to None.
+            feature_labels (list[Any], optional): The feature labels to get the summary for.
+                Defaults to None.
+
+        Returns:
+            pd.DataFrame: A dataframe with the summary for the given labels.
+        """
+        if self.result_logger is None:
+            raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
+        return self.result_logger.get_beta_summary_df(
+            spatial_labels, temporal_labels, feature_labels
+        )
+
     @property
-    def hparam_per_iter_df(self):
+    def hyperparameters_per_iter_df(self):
         if self.result_logger is None:
             raise RuntimeError('Hyperparameters can only be accessed after MCMC sampling.')
-        return self.result_logger.hparam_per_iter_df
+        return self.result_logger.hyperparameters_per_iter_df
 
     def plot_temporal_betas(
         self,
@@ -808,7 +834,7 @@ class BKTRRegressor:
         self.plot_maker = BKTRBetaPlotMaker(
             self.result_logger.get_beta_summary_df,
             self.beta_estimates,
-            self.hparam_per_iter_df,
+            self.hyperparameters_per_iter_df,
             self.spatial_labels,
             self.temporal_labels,
             self.feature_labels,

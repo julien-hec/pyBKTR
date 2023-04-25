@@ -296,10 +296,10 @@ class BKTRBetaPlotMaker:
     ):
         hparams = self.hparam_per_iter_df.columns if hyperparameters is None else hyperparameters
         df = self.hparam_per_iter_df[hparams].copy()
-        df['Sampling Iteration'] = df.index + 1
-        df = df.melt(id_vars=['Sampling Iteration'], var_name='Hyperparameter', value_name='Value')
+        df.reset_index(inplace=True)
+        df = df.melt(id_vars=['Sampling Iter'], var_name='Hyperparameter', value_name='Value')
 
-        fig = px.line(df, x='Sampling Iteration', y='Value', color='Hyperparameter')
+        fig = px.line(df, x='Sampling Iter', y='Value', color='Hyperparameter')
         fig.update_layout(
             width=fig_width,
             height=fig_height,
