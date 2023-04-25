@@ -42,7 +42,7 @@ class ResultLogger:
         'beta_estimates_df',
         'y_estimates_df',
         'beta_covariates_summary_df',
-        'hparam_per_iter_df',
+        'hyperparameters_per_iter_df',
         'last_time_stamp',
         'export_path',
         'export_suffix',
@@ -64,15 +64,15 @@ class ResultLogger:
     quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
 
     # Summary parameters
-    LINE_NCHAR = 79
+    LINE_NCHAR = 70
     TAB_STR = '  '
     LINE_SEPARATOR = LINE_NCHAR * '='
     DF_DISTRIB_STR_PARAMS = {
         'float_format': '{:,.3f}'.format,
         'col_space': 7,
         'line_width': LINE_NCHAR,
-        'max_colwidth': 20,
-        'formatters': {'__index__': lambda x: f'{x:20}'},
+        'max_colwidth': 15,
+        'formatters': {'__index__': lambda x: f'{x:15}'},
     }
     DISTRIB_COLS = ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
 
@@ -261,9 +261,10 @@ class ResultLogger:
             columns=self.feature_labels,
             index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
         )
-        self.hparam_per_iter_df = pd.DataFrame(
+        self.hyperparameters_per_iter_df = pd.DataFrame(
             self.hparam_per_iter.t().cpu(),
             columns=self.hparam_labels,
+            index=pd.Index(range(1, self.nb_sampling_iter + 1), name='Sampling Iter'),
         )
         error_metrics = self._set_error_metrics()
         iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics
@@ -359,9 +360,7 @@ class ResultLogger:
         summary_str = [
             '',
             self.LINE_SEPARATOR,
-            '',
             f'{"BKTR Regressor Summary":{title_format}}',
-            '',
             self.LINE_SEPARATOR,
             self._get_formula_str(),
             '',
@@ -377,8 +376,6 @@ class ResultLogger:
             f'{self.TAB_STR}MAE: {self.error_metrics["MAE"]:.3f}',
             f'Computation time: {self.total_elapsed_time:.2f}s.',
             self.LINE_SEPARATOR,
-            'Kernels',
-            '',
             '-- Spatial Kernel --',
             self._kernel_summary(self.spatial_kernel, 'spatial'),
             '',
