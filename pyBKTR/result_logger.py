@@ -54,14 +54,14 @@ class ResultLogger:
     moment_metrics = ['Mean', 'SD']
     quantile_metrics = [
         'Min',
-        'Low2.5p',
         'Q1',
         'Median',
         'Q3',
-        'Up97.5p',
         'Max',
+        'Low2.5p',
+        'Up97.5p',
     ]
-    quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
+    quantile_values = [0, 0.25, 0.5, 0.75, 1, 0.025, 0.975]
 
     # Summary parameters
     LINE_NCHAR = 70
