@@ -51,14 +51,14 @@ class ResultLogger:
     ]
 
     # Metrics used to create beta summaries
-    moment_metrics = ['Mean', 'Var']
+    moment_metrics = ['Mean', 'SD']
     quantile_metrics = [
         'Min',
-        'p2.5',
+        'Low2.5p',
         'Q1',
         'Median',
         'Q3',
-        'p97.5',
+        'Up97.5p',
         'Max',
     ]
     quantile_values = [0, 0.025, 0.25, 0.5, 0.75, 0.975, 1]
@@ -67,14 +67,16 @@ class ResultLogger:
     LINE_NCHAR = 70
     TAB_STR = '  '
     LINE_SEPARATOR = LINE_NCHAR * '='
+    COL_WIDTH = 18
     DF_DISTRIB_STR_PARAMS = {
         'float_format': '{:,.3f}'.format,
-        'col_space': 7,
+        'col_space': 8,
         'line_width': LINE_NCHAR,
-        'max_colwidth': 15,
-        'formatters': {'__index__': lambda x: f'{x:15}'},
+        'max_colwidth': COL_WIDTH,
+        'formatters': {'__index__': lambda x, w=COL_WIDTH: f'{x:{w}}'},
     }
-    DISTRIB_COLS = ['p2.5', 'Q1', 'Median', 'Mean', 'Q3', 'p97.5']
+    MAIN_SUMMARY_COLS = ['Mean', 'Median', 'SD']
+    DISTRIB_COLS = [*MAIN_SUMMARY_COLS, 'Low2.5p', 'Up97.5p']
 
     def __init__(
         self,
@@ -295,7 +297,7 @@ class ResultLogger:
         # Dimension for moment calculations are a bit different than for quantile
         moment_dim = dim if dim is not None else []
         beta_summaries[0] = values.mean(dim=moment_dim)
-        beta_summaries[1] = values.var(dim=moment_dim)
+        beta_summaries[1] = values.std(dim=moment_dim)
         beta_summaries[len(cls.moment_metrics) :] = torch.quantile(
             values, TSR.tensor(cls.quantile_values), dim=dim
         )
@@ -454,7 +456,7 @@ class ResultLogger:
             str: A string representation of the beta estimates.
         """
 
-        distrib_df = self.beta_covariates_summary_df[self.DISTRIB_COLS].copy()
+        distrib_df = self.beta_covariates_summary_df[self.MAIN_SUMMARY_COLS].copy()
         beta_distrib_str = distrib_df.to_string(**self.DF_DISTRIB_STR_PARAMS)
         beta_summary_str = [
             'Beta Estimates Summary (Aggregated Per Covariates)',
