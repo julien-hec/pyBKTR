@@ -53,13 +53,13 @@ class BKTRBetaPlotMaker:
         for feature_label in plot_feature_labels:
             beta_df = beta_summary_df.loc[
                 (spatial_point_label, slice(None), feature_label),
-                ['p2.5', 'Mean', 'p97.5'],
+                ['Low2.5p', 'Mean', 'Up97.5p'],
             ]
             col_title = feature_label.replace('_', ' ').title()
             line_color = next(color_cycle)
             fill_rgba = self.hex_to_rgba(line_color, 0.2)
-            pctl_025 = beta_df['p2.5'].to_list()
-            pctl_975 = beta_df['p97.5'].to_list()
+            pctl_025 = beta_df['Low2.5p'].to_list()
+            pctl_975 = beta_df['Up97.5p'].to_list()
 
             scatters.extend(
                 [
@@ -204,7 +204,8 @@ class BKTRBetaPlotMaker:
             xaxis={'type': 'category'},
             yaxis_title='Beta Value',
             title=(
-                'Distribution of beta values for a given spatial point, temporal point and feature'
+                'Posterior distribution of beta values per given'
+                ' spatial point, temporal point and feature'
             ),
         )
         if show_figure:
@@ -241,7 +242,7 @@ class BKTRBetaPlotMaker:
             height=fig_height,
             xaxis={'type': 'category'},
             yaxis_title='Beta Value',
-            title='Distribution of the beta estimates by feature',
+            title='Distribution of beta estimates by feature across time and space',
         )
         if show_figure:
             fig.show()
@@ -280,7 +281,7 @@ class BKTRBetaPlotMaker:
             height=fig_height,
             xaxis={'type': 'category'},
             yaxis_title='Hyperparameter Value',
-            title='Distribution of BKTR hyperparameters',
+            title='Posterior distribution of BKTR hyperparameters',
         )
         if show_figure:
             fig.show()
@@ -305,7 +306,7 @@ class BKTRBetaPlotMaker:
             height=fig_height,
             xaxis={'type': 'category'},
             yaxis_title='Hyperparameter Value',
-            title='Hyperparameter Values Through Sampling Iterations',
+            title='Hyperparameter values through sampling iterations (Traceplot)',
         )
         if show_figure:
             fig.show()
