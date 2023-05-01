@@ -19,9 +19,7 @@ DEFAULT_UBOUND = log(1e3)
 class KernelParameter:
 
     value: float
-    """The hyperparameter mean's prior value (Paper -- :math:`\\phi`) or its constant value"""
-    name: str
-    """The name of the paramater (used in logging and in kernel representation)"""
+    """The hyperparameter mean's prior value (Paper -- :math:`\\phi`) or its fixed value"""
     is_fixed: bool = False
     """Says if the kernel parameter is fixed or not (if it is fixed, there is no sampling)"""
     lower_bound: float = DEFAULT_LBOUND
@@ -38,7 +36,6 @@ class KernelParameter:
     def __init__(
         self,
         value: float,
-        name: str,
         is_fixed: bool = False,
         lower_bound: float = DEFAULT_LBOUND,
         upper_bound: float = DEFAULT_UBOUND,
@@ -46,15 +43,15 @@ class KernelParameter:
         hparam_precision: float = 1.0,
     ):
         self.value = value
-        self.name = name
         self.lower_bound = lower_bound
         self.uppder_bound = upper_bound
         self.is_fixed = is_fixed
         self.slice_sampling_scale = slice_sampling_scale
         self.hparam_precision = hparam_precision
 
-    def set_kernel(self, kernel: Kernel):
+    def set_kernel(self, kernel: Kernel, param_name: str):
         self.kernel = kernel
+        self.name = param_name
         self.kernel.parameters.append(self)
 
     @property
@@ -142,34 +139,35 @@ class KernelWhiteNoise(Kernel):
 
     def __init__(
         self,
-        variance: KernelParameter = KernelParameter(1, 'variance', is_fixed=True),
+        variance: KernelParameter = KernelParameter(1, is_fixed=True),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
         self.variance = variance
-        self.variance.set_kernel(self)
+        self.variance.set_kernel(self, 'variance')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return TSR.eye(self.distance_matrix.shape[0]) * self.variance.value
 
 
-class KernelDotProduct(Kernel):
+class KernelLinear(Kernel):
+    # TODO Why is the variance a kernel param here?????
     variance: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'Linear Kernel'
 
     def __init__(
         self,
-        variance: KernelParameter = KernelParameter(1, 'variance', lower_bound=0),
+        variance: KernelParameter = KernelParameter(1, lower_bound=0),
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
         self.distance_type = DIST_TYPE.DOT_PRODUCT
         super().__init__(kernel_variance, self.distance_type, jitter_value)
         self.variance = variance
-        self.variance.set_kernel(self)
+        self.variance.set_kernel(self, 'variance')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return self.distance_matrix + self.variance.value
@@ -182,14 +180,14 @@ class KernelSE(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
+        lengthscale: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
         self.lengthscale = lengthscale
-        self.lengthscale.set_kernel(self)
+        self.lengthscale.set_kernel(self, 'lengthscale')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return torch.exp(-self.distance_matrix**2 / (2 * self.lengthscale.value**2))
@@ -203,17 +201,17 @@ class KernelRQ(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
-        alpha: KernelParameter = KernelParameter(log(2), 'alpha'),
+        lengthscale: KernelParameter = KernelParameter(log(2)),
+        alpha: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
         self.lengthscale = lengthscale
-        self.lengthscale.set_kernel(self)
+        self.lengthscale.set_kernel(self, 'lengthscale')
         self.alpha = alpha
-        self.alpha.set_kernel(self)
+        self.alpha.set_kernel(self, 'alpha')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return (
@@ -229,17 +227,17 @@ class KernelPeriodic(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
-        period_length: KernelParameter = KernelParameter(log(2), 'period length'),
+        lengthscale: KernelParameter = KernelParameter(log(2)),
+        period_length: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
         self.lengthscale = lengthscale
-        self.lengthscale.set_kernel(self)
+        self.lengthscale.set_kernel(self, 'lengthscale')
         self.period_length = period_length
-        self.period_length.set_kernel(self)
+        self.period_length.set_kernel(self, 'period length')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return torch.exp(
@@ -256,7 +254,7 @@ class KernelMatern(Kernel):
     def __init__(
         self,
         smoothness_factor: Literal[1, 3, 5],
-        lengthscale: KernelParameter = KernelParameter(log(2), 'lengthscale'),
+        lengthscale: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.HAVERSINE,
         jitter_value: float | None = None,
@@ -266,7 +264,7 @@ class KernelMatern(Kernel):
         super().__init__(kernel_variance, distance_type, jitter_value)
         self.smoothness_factor = smoothness_factor
         self.lengthscale = lengthscale
-        self.lengthscale.set_kernel(self)
+        self.lengthscale.set_kernel(self, 'lengthscale')
 
     @property
     def _name(self) -> str:
