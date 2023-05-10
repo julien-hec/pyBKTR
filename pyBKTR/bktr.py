@@ -313,7 +313,7 @@ class BKTRRegressor:
         return self.result_logger.y_estimates_df
 
     @property
-    def beta_estimates(self):
+    def beta_estimates(self) -> pd.DataFrame:
         if self.result_logger is None:
             raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
         return self.result_logger.beta_estimates_df
@@ -346,8 +346,9 @@ class BKTRRegressor:
         temporal_labels: list[Any] = None,
         feature_labels: list[Any] = None,
     ) -> pd.DataFrame:
-        """Get a summary of the beta values. If no labels are given, then the summary is for all
-            the betas. If labels are given, then the summary is for the given labels.
+        """Get a summary of estimated beta values. If no labels are given, then
+        the summary is for all the betas. If labels are given, then the summary
+        is for the given labels.
 
         Args:
             spatial_labels (list[Any], optional): The spatial labels to get the summary for.

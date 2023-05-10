@@ -2,6 +2,8 @@ from enum import Enum
 
 import torch
 
+from pyBKTR.tensor_ops import TSR
+
 EARTH_RADIUS_KM = 6371.2
 
 
@@ -10,12 +12,15 @@ class DIST_TYPE(Enum):
     EUCLIDEAN = 'euclidean'
     HAVERSINE = 'haversine'
     DOT_PRODUCT = 'dot product'
+    NONE = 'none'
 
 
 class DistanceCalculator:
     @classmethod
     def get_matrix(cls, x: torch.Tensor, distance_type: DIST_TYPE, earth_radius=EARTH_RADIUS_KM):
         match distance_type:
+            case DIST_TYPE.NONE:
+                return cls.calc_none_dist(x, x)
             case DIST_TYPE.LINEAR:
                 return cls.calc_linear_dist(x, x)
             case DIST_TYPE.EUCLIDEAN:
@@ -42,6 +47,11 @@ class DistanceCalculator:
             raise RuntimeError(
                 f'Distance params last dimension should contain {expected_last_dim_shape} elements'
             )
+
+    @classmethod
+    def calc_none_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
+        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
+        return TSR.eye(x1.shape[0])
 
     @classmethod
     def calc_linear_dist(cls, x1: torch.Tensor, x2: torch.Tensor):

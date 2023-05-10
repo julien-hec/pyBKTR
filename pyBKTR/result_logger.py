@@ -294,6 +294,9 @@ class ResultLogger:
             beta_val_shape = list(values.shape)
             summary_shape = summary_shape + beta_val_shape[:dim] + beta_val_shape[dim + 1 :]
         beta_summaries = TSR.zeros(summary_shape)
+        # In the advent of having no values, we return the empty tensor
+        if values.numel() == 0:
+            return beta_summaries
         # Dimension for moment calculations are a bit different than for quantile
         moment_dim = dim if dim is not None else []
         beta_summaries[0] = values.mean(dim=moment_dim)

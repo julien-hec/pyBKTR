@@ -34,8 +34,8 @@ class KernelParamSampler:
     def initialize_theta_bounds(param: KernelParameter) -> tuple[float, float]:
         """Initialize sampling bounds according to current theta value and sampling scale"""
         theta_range = param.slice_sampling_scale * float(TSR.rand(1))
-        theta_min = max(math.log(param.value) - theta_range, param.lower_bound)
-        theta_max = min(theta_min + param.slice_sampling_scale, param.uppder_bound)
+        theta_min = max(math.log(param.value) - theta_range, math.log(param.lower_bound))
+        theta_max = min(theta_min + param.slice_sampling_scale, math.log(param.upper_bound))
         return theta_min, theta_max
 
     def _prior_fn(self, param: KernelParameter) -> float:
@@ -159,6 +159,7 @@ class PrecisionMatrixSampler:
         # TODO check if we can use cov instead of precision #14
         w_inv = w.inverse()
         wish_sigma = (w_inv + w_inv.t()) * 0.5
+        wish_sigma += TSR.eye(self.nb_covariates) * TSR.default_jitter
         wish_precision_matrix = torch.distributions.Wishart(
             df=self.wish_df, covariance_matrix=wish_sigma
         ).sample()

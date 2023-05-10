@@ -40,11 +40,7 @@ class TSR:
 
     @staticmethod
     def kronecker_prod(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        kron_prod = torch.einsum('ab,cd->acbd', [a, b])
-        a_rows, a_cols = a.shape
-        b_rows, b_cols = b.shape
-        kron_shape = [a_rows * b_rows, a_cols * b_cols]
-        return torch.reshape(kron_prod, kron_shape)
+        return torch.kron(a, b)
 
     @staticmethod
     def khatri_rao_prod(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
