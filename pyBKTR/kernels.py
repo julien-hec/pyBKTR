@@ -152,6 +152,8 @@ class Kernel(abc.ABC):
 
 
 class KernelWhiteNoise(Kernel):
+    """White Noise Kernel"""
+
     variance: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'White Noise Kernel'
@@ -171,6 +173,8 @@ class KernelWhiteNoise(Kernel):
 
 
 class KernelLinear(Kernel):
+    """Linear Kernel"""
+
     # TODO Why is the variance a kernel param here?????
     variance: KernelParameter
     distance_matrix: torch.Tensor
@@ -191,9 +195,11 @@ class KernelLinear(Kernel):
 
 
 class KernelSE(Kernel):
+    """Squared Exponential Kernel"""
+
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
-    _name: str = 'Squared Exponential Kernel'
+    _name: str = 'SE Kernel'
 
     def __init__(
         self,
@@ -211,10 +217,12 @@ class KernelSE(Kernel):
 
 
 class KernelRQ(Kernel):
+    """Rational Quadratic Kernel"""
+
     lengthscale: KernelParameter
     alpha: KernelParameter
     distance_matrix: torch.Tensor
-    _name: str = 'Rational Quadratic Kernel'
+    _name: str = 'RQ Kernel'
 
     def __init__(
         self,
@@ -237,6 +245,8 @@ class KernelRQ(Kernel):
 
 
 class KernelPeriodic(Kernel):
+    """Periodic Kernel"""
+
     lengthscale: KernelParameter
     period_length: KernelParameter
     distance_matrix: torch.Tensor

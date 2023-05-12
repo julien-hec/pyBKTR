@@ -519,8 +519,8 @@ class BKTRRegressor:
         self,
         hyperparameters: list[str] | None = None,
         show_figure: bool = True,
-        fig_width: int = 1100,
-        fig_height: int = 600,
+        fig_width: int = 800,
+        fig_height: int = 550,
     ):
         """Plot the distribution of hyperparameters through iterations.
 
@@ -528,7 +528,7 @@ class BKTRRegressor:
             hyperparameters (list[str] | None, optional): List of hyperparameters to plot.
                 If None, plot all hyperparameters. Defaults to None.
             show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 1100.
+            fig_width (int, optional): Figure width. Defaults to 1000.
             fig_height (int, optional): Figure height. Defaults to 600.
         """
         if self.plot_maker is None:

@@ -134,6 +134,23 @@ def reshape_covariate_dfs(
     return data_df
 
 
+def get_dim_labels(dim_prefix: str, max_value: int) -> str:
+    """Utility function to get the dimension labels for a
+        given dimension prefix and max value.
+        TODO: Do not export
+
+    Args:
+        dim_prefix (str): The prefix of the dimension labels
+        max_value (int): The maximum value of the dimension labels
+
+    Returns:
+        str: The dimension labels
+    """
+    max_digits = len(str(max_value))
+    int_format = f'{{:0{max_digits}d}}'
+    return [f'{dim_prefix}_{int_format.format(i)}' for i in range(max_value)]
+
+
 def simulate_spatiotemporal_data(
     nb_spatial_locations: int,
     nb_time_points: int,
@@ -177,11 +194,11 @@ def simulate_spatiotemporal_data(
     temp_pos = temp_pos.reshape([nb_time_points, 1])
 
     # Dimension labels
-    s_dims = [f's_dim_{i}' for i in range(nb_spatial_dimensions)]
-    s_locs = [f's_loc_{i}' for i in range(nb_spatial_locations)]
-    t_points = [f't_point_{i}' for i in range(nb_time_points)]
-    s_covs = [f's_cov_{i}' for i in range(len(spatial_covariates_means))]
-    t_covs = [f't_cov_{i}' for i in range(len(temporal_covariates_means))]
+    s_dims = get_dim_labels('s_dim', nb_spatial_dimensions)
+    s_locs = get_dim_labels('s_loc', nb_spatial_locations)
+    t_points = get_dim_labels('t_point', nb_time_points)
+    s_covs = get_dim_labels('s_cov', len(spatial_covariates_means))
+    t_covs = get_dim_labels('t_cov', len(temporal_covariates_means))
 
     spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=s_locs)
     temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=t_points)
@@ -189,12 +206,12 @@ def simulate_spatiotemporal_data(
     spa_means = TSR.tensor(spatial_covariates_means)
     nb_spa_covariates = len(spa_means)
     spa_covariates = TSR.randn([nb_spatial_locations, nb_spa_covariates])
-    spa_covariates = spa_covariates * spa_means
+    spa_covariates = spa_covariates + spa_means
 
     temp_means = TSR.tensor(temporal_covariates_means)
     nb_temp_covariates = len(temp_means)
     temp_covariates = TSR.randn([nb_time_points, nb_temp_covariates])
-    temp_covariates = temp_covariates * temp_means
+    temp_covariates = temp_covariates + temp_means
     inter_covariates = TSR.ones([nb_spatial_locations, nb_time_points, 1])
     covs = torch.concat(
         [
@@ -251,7 +268,7 @@ def simulate_spatiotemporal_data(
     )
     beta_df = pd.DataFrame(
         beta_values.reshape([nb_spatial_locations * nb_time_points, nb_covs]),
-        columns=['beta_' + str(i) for i in range(nb_covs)],
+        columns=['Intercept'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
     return {
