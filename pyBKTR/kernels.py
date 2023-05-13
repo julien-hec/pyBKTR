@@ -7,13 +7,14 @@ from functools import cached_property
 from typing import Callable, Literal
 
 import torch
+from plotly import express as px
 
 from pyBKTR.distances import DIST_TYPE, DistanceCalculator
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import log
 
-DEFAULT_LBOUND = log(1e-3)
-DEFAULT_UBOUND = log(1e3)
+DEFAULT_LBOUND = 1e-3
+DEFAULT_UBOUND = 1e3
 
 
 class KernelParameter:
@@ -44,7 +45,7 @@ class KernelParameter:
     ):
         self.value = value
         self.lower_bound = lower_bound
-        self.uppder_bound = upper_bound
+        self.upper_bound = upper_bound
         self.is_fixed = is_fixed
         self.slice_sampling_scale = slice_sampling_scale
         self.hparam_precision = hparam_precision
@@ -78,7 +79,7 @@ class Kernel(abc.ABC):
 
     kernel_variance: float
     jitter_value: float | None
-    distance_matrix: torch.Tensor | None
+    distance_matrix: torch.Tensor | None = None
     parameters: list[KernelParameter] = []
     kernel: torch.Tensor
     distance_type: type[DIST_TYPE]
@@ -125,6 +126,24 @@ class Kernel(abc.ABC):
         else:
             self.distance_matrix = distance_matrix
 
+    def plot(self, show_figure: bool = True):
+        fig = px.imshow(
+            self.kernel_gen(),
+            title=f'{self._name} Covariance Matrix',
+            color_continuous_scale=px.colors.sequential.Viridis,
+        )
+        fig.update_layout(
+            xaxis_title='<b>x</b>',
+            yaxis_title="<b>x</b>'",
+            coloraxis_colorbar={'title': 'Covariance Value'},
+            height=700,
+            width=700,
+        )
+        if show_figure:
+            fig.show()
+            return
+        return fig
+
     def __mul__(self, other) -> KernelComposed:
         return KernelComposed(self, other, f'({self._name} * {other._name})', CompositionOps.MUL)
 
@@ -133,6 +152,8 @@ class Kernel(abc.ABC):
 
 
 class KernelWhiteNoise(Kernel):
+    """White Noise Kernel"""
+
     variance: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'White Noise Kernel'
@@ -141,18 +162,19 @@ class KernelWhiteNoise(Kernel):
         self,
         variance: KernelParameter = KernelParameter(1, is_fixed=True),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, distance_type, jitter_value)
+        super().__init__(kernel_variance, DIST_TYPE.NONE, jitter_value)
         self.variance = variance
         self.variance.set_kernel(self, 'variance')
 
     def _core_kernel_fn(self) -> torch.Tensor:
-        return TSR.eye(self.distance_matrix.shape[0]) * self.variance.value
+        return self.distance_matrix * self.variance.value
 
 
 class KernelLinear(Kernel):
+    """Linear Kernel"""
+
     # TODO Why is the variance a kernel param here?????
     variance: KernelParameter
     distance_matrix: torch.Tensor
@@ -164,8 +186,7 @@ class KernelLinear(Kernel):
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
-        self.distance_type = DIST_TYPE.DOT_PRODUCT
-        super().__init__(kernel_variance, self.distance_type, jitter_value)
+        super().__init__(kernel_variance, DIST_TYPE.DOT_PRODUCT, jitter_value)
         self.variance = variance
         self.variance.set_kernel(self, 'variance')
 
@@ -174,9 +195,11 @@ class KernelLinear(Kernel):
 
 
 class KernelSE(Kernel):
+    """Squared Exponential Kernel"""
+
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
-    _name: str = 'Squared Exponential Kernel'
+    _name: str = 'SE Kernel'
 
     def __init__(
         self,
@@ -194,10 +217,12 @@ class KernelSE(Kernel):
 
 
 class KernelRQ(Kernel):
+    """Rational Quadratic Kernel"""
+
     lengthscale: KernelParameter
     alpha: KernelParameter
     distance_matrix: torch.Tensor
-    _name: str = 'Rational Quadratic Kernel'
+    _name: str = 'RQ Kernel'
 
     def __init__(
         self,
@@ -220,6 +245,8 @@ class KernelRQ(Kernel):
 
 
 class KernelPeriodic(Kernel):
+    """Periodic Kernel"""
+
     lengthscale: KernelParameter
     period_length: KernelParameter
     distance_matrix: torch.Tensor
@@ -336,7 +363,9 @@ class KernelComposed(Kernel):
                 return self.left_kernel._core_kernel_fn() * self.right_kernel._core_kernel_fn()
         raise RuntimeError('Composition operation not implemented')
 
-    def set_distance_matrix(self, x: None | torch.Tensor, distance_matrix: None | torch.Tensor):
+    def set_distance_matrix(
+        self, x: None | torch.Tensor = None, distance_matrix: None | torch.Tensor = None
+    ):
         super().set_distance_matrix(x, distance_matrix)
         self.left_kernel.set_distance_matrix(x, distance_matrix)
         self.right_kernel.set_distance_matrix(x, distance_matrix)

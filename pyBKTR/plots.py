@@ -307,6 +307,13 @@ class BKTRBetaPlotMaker:
             xaxis={'type': 'category'},
             yaxis_title='Hyperparameter Value',
             title='Hyperparameter values through sampling iterations (Traceplot)',
+            legend={
+                'orientation': 'h',
+                'yanchor': 'bottom',
+                'y': -0.3,
+                'x': 1,
+                'xanchor': 'right',
+            },
         )
         if show_figure:
             fig.show()
