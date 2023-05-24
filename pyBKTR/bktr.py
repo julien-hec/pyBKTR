@@ -286,7 +286,7 @@ class BKTRRegressor:
             self._collect_iter_values(i)
         self._log_final_iter_results()
 
-    def predict(
+    def predict_avg_decomp(
         self,
         new_data_df: pd.DataFrame,
         new_spatial_x_df: pd.DataFrame | None = None,
@@ -379,7 +379,7 @@ class BKTRRegressor:
         )
         return new_y_df, new_beta_df
 
-    def predict2(
+    def predict_forward(
         self,
         new_data_df: pd.DataFrame,
         nb_sample: int = 500,
@@ -453,10 +453,261 @@ class BKTRRegressor:
                 )
             self._sample_covariate_decomp()
             self._sample_temporal_decomp()
-            self._set_errors_and_sample_precision_tau(i)
+            self._set_errors_and_sample_precision_tau(0)
 
             all_betas[:, :, :, i] = torch.einsum(
                 'il,jl,kl->ijk', [new_spa_decomp, self.temporal_decomp, self.covs_decomp]
+            )
+
+        _, x_df = self._get_x_and_y_dfs_from_formula(new_data_df, self.formula)
+        covariates = TSR.tensor(x_df.to_numpy()).reshape(
+            [len(spa_loc_labels), len(temp_loc_labels), -1]
+        )
+        new_betas = all_betas.mean(dim=-1)
+        new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
+        new_beta_df = pd.DataFrame(
+            new_betas.reshape([len(spa_loc_labels) * len(temp_loc_labels), -1]),
+            index=x_df.index,
+            columns=x_df.columns,
+        )
+        new_y_df = pd.DataFrame(
+            new_y_est.flatten(),
+            index=x_df.index,
+            columns=['y'],
+        )
+        return new_y_df, new_beta_df
+
+    def predict_old_iter(
+        self,
+        new_data_df: pd.DataFrame,
+        new_spatial_x_df: pd.DataFrame | None = None,
+        new_temporal_x_df: pd.DataFrame | None = None,
+        jitter=None,
+    ):
+        """We pass through all existing sampling iterations and B^n sample using lambda*"""
+        if new_spatial_x_df is None and new_temporal_x_df is None:
+            raise ValueError(
+                'At least one of new_x_spatial_df and new_x_temporal_df must be provided.'
+            )
+        for df in [
+            new_data_df,
+            new_spatial_x_df,
+            new_temporal_x_df,
+        ]:
+            if df is not None:
+                df.sort_index(inplace=True)
+
+        spa_loc_labels = new_data_df.index.get_level_values('location').unique().to_list()
+        temp_loc_labels = new_data_df.index.get_level_values('time').unique().to_list()
+
+        spatial_x_df = (
+            pd.concat([self.spatial_x_df, new_spatial_x_df], axis=0)
+            if new_spatial_x_df is not None
+            else self.spatial_x_df
+        )
+        temporal_x_df = (
+            pd.concat([self.temporal_x_df, new_temporal_x_df], axis=0)
+            if new_temporal_x_df is not None
+            else self.temporal_x_df
+        )
+        # TODO verify columns in rhs are all in new data df as well
+        # TODO rows added to new data df should be all combinations of new and past
+        # spatial and temporal coordinates
+        data_df = pd.concat([self.data_df, new_data_df], axis=0)
+        self._verify_input_labels(
+            data_df, spatial_kernel_x=spatial_x_df, temporal_kernel_x=temporal_x_df
+        )
+        # TODO temporal as well
+        all_betas = TSR.zeros(
+            [len(spa_loc_labels), len(temp_loc_labels), len(self.formula.rhs), self.sampling_iter]
+        )
+        new_lengthscale = self.result_logger.hyperparameters_per_iter_df.mean()[
+            'Spatial - Matern 3/2 Kernel - lengthscale'
+        ]
+        new_spatial_kernel = deepcopy(self.spatial_kernel)
+        new_spatial_kernel.lengthscale.value = new_lengthscale
+        new_spatial_kernel.set_distance_matrix(TSR.tensor(spatial_x_df.to_numpy()))
+        spa_cov = new_spatial_kernel.kernel_gen()
+        nb_new_locs = len(new_spatial_x_df)
+        old_spa_cov = spa_cov[:-nb_new_locs, :-nb_new_locs]
+        new_old_spa_cov = spa_cov[-nb_new_locs:, :-nb_new_locs]
+        old_new_spa_cov = spa_cov[:-nb_new_locs, -nb_new_locs:]
+        new_spa_cov = spa_cov[-nb_new_locs:, -nb_new_locs:]
+        for i in range(self.sampling_iter):
+            spa_decomp = self.result_logger.spatial_decomp_per_iter[:, :, i]
+            temp_decomp = self.result_logger.temporal_decomp_per_iter[:, :, i]
+            covs_decomp = self.result_logger.covs_decomp_per_iter[:, :, i]
+            old_decomp = spa_decomp
+            new_spa_decomp_mus = new_old_spa_cov @ old_spa_cov.inverse() @ old_decomp
+            new_spa_decomp_cov = new_spa_cov - (
+                new_old_spa_cov @ old_spa_cov.inverse() @ old_new_spa_cov
+            )
+            new_spa_decomp_cov = (new_spa_decomp_cov + new_spa_decomp_cov.T) / 2
+            if jitter is not None:
+                new_spa_decomp_cov += jitter * torch.eye(new_spa_decomp_cov.shape[0])
+            new_spa_decomp = (
+                torch.distributions.MultivariateNormal(new_spa_decomp_mus.T, new_spa_decomp_cov)
+                .sample()
+                .T
+            )
+            all_betas[:, :, :, i] = torch.einsum(
+                'il,jl,kl->ijk', [new_spa_decomp, temp_decomp, covs_decomp]
+            )
+
+        _, x_df = self._get_x_and_y_dfs_from_formula(new_data_df, self.formula)
+        covariates = TSR.tensor(x_df.to_numpy()).reshape(
+            [len(spa_loc_labels), len(temp_loc_labels), -1]
+        )
+        new_betas = all_betas.mean(dim=-1)
+        new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
+        new_beta_df = pd.DataFrame(
+            new_betas.reshape([len(spa_loc_labels) * len(temp_loc_labels), -1]),
+            index=x_df.index,
+            columns=x_df.columns,
+        )
+        new_y_df = pd.DataFrame(
+            new_y_est.flatten(),
+            index=x_df.index,
+            columns=['y'],
+        )
+        return new_y_df, new_beta_df
+
+    def predict4(
+        self,
+        new_data_df: pd.DataFrame,
+        new_spatial_x_df: pd.DataFrame | None = None,
+        new_temporal_x_df: pd.DataFrame | None = None,
+        jitter=None,
+    ):
+        if new_spatial_x_df is None and new_temporal_x_df is None:
+            raise ValueError(
+                'At least one of new_x_spatial_df and new_x_temporal_df must be provided.'
+            )
+        for df in [
+            new_data_df,
+            new_spatial_x_df,
+            new_temporal_x_df,
+        ]:
+            if df is not None:
+                df.sort_index(inplace=True)
+
+        spa_loc_labels = new_data_df.index.get_level_values('location').unique().to_list()
+        temp_loc_labels = new_data_df.index.get_level_values('time').unique().to_list()
+
+        spatial_x_df = (
+            pd.concat([self.spatial_x_df, new_spatial_x_df], axis=0)
+            if new_spatial_x_df is not None
+            else self.spatial_x_df
+        )
+        temporal_x_df = (
+            pd.concat([self.temporal_x_df, new_temporal_x_df], axis=0)
+            if new_temporal_x_df is not None
+            else self.temporal_x_df
+        )
+        # TODO verify columns in rhs are all in new data df as well
+        # TODO rows added to new data df should be all combinations of new and past
+        # spatial and temporal coordinates
+        data_df = pd.concat([self.data_df, new_data_df], axis=0)
+        self._verify_input_labels(
+            data_df, spatial_kernel_x=spatial_x_df, temporal_kernel_x=temporal_x_df
+        )
+        # TODO temporal as well
+        all_betas = TSR.zeros(
+            [len(spa_loc_labels), len(temp_loc_labels), len(self.formula.rhs), self.sampling_iter]
+        )
+        _, x_df = self._get_x_and_y_dfs_from_formula(new_data_df, self.formula)
+        covariates = TSR.tensor(x_df.to_numpy()).reshape(
+            [len(spa_loc_labels), len(temp_loc_labels), -1]
+        )
+        new_betas = all_betas.mean(dim=-1)
+        new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
+        new_beta_df = pd.DataFrame(
+            new_betas.reshape([len(spa_loc_labels) * len(temp_loc_labels), -1]),
+            index=x_df.index,
+            columns=x_df.columns,
+        )
+        new_y_df = pd.DataFrame(
+            new_y_est.flatten(),
+            index=x_df.index,
+            columns=['y'],
+        )
+        return new_y_df, new_beta_df
+
+    def predict_old_iter_and_hparam(
+        self,
+        new_data_df: pd.DataFrame,
+        new_spatial_x_df: pd.DataFrame | None = None,
+        new_temporal_x_df: pd.DataFrame | None = None,
+        jitter=None,
+    ):
+        """We pass through all existing sampling iterations and B^n sample using lambda*"""
+        if new_spatial_x_df is None and new_temporal_x_df is None:
+            raise ValueError(
+                'At least one of new_x_spatial_df and new_x_temporal_df must be provided.'
+            )
+        for df in [
+            new_data_df,
+            new_spatial_x_df,
+            new_temporal_x_df,
+        ]:
+            if df is not None:
+                df.sort_index(inplace=True)
+
+        spa_loc_labels = new_data_df.index.get_level_values('location').unique().to_list()
+        temp_loc_labels = new_data_df.index.get_level_values('time').unique().to_list()
+
+        spatial_x_df = (
+            pd.concat([self.spatial_x_df, new_spatial_x_df], axis=0)
+            if new_spatial_x_df is not None
+            else self.spatial_x_df
+        )
+        temporal_x_df = (
+            pd.concat([self.temporal_x_df, new_temporal_x_df], axis=0)
+            if new_temporal_x_df is not None
+            else self.temporal_x_df
+        )
+        # TODO verify columns in rhs are all in new data df as well
+        # TODO rows added to new data df should be all combinations of new and past
+        # spatial and temporal coordinates
+        data_df = pd.concat([self.data_df, new_data_df], axis=0)
+        self._verify_input_labels(
+            data_df, spatial_kernel_x=spatial_x_df, temporal_kernel_x=temporal_x_df
+        )
+        # TODO temporal as well
+        all_betas = TSR.zeros(
+            [len(spa_loc_labels), len(temp_loc_labels), len(self.formula.rhs), self.sampling_iter]
+        )
+        for i in range(self.sampling_iter):
+            new_lengthscale = self.result_logger.hyperparameters_per_iter_df.loc[
+                i + 1, 'Spatial - Matern 3/2 Kernel - lengthscale'
+            ]
+            new_spatial_kernel = deepcopy(self.spatial_kernel)
+            new_spatial_kernel.lengthscale.value = new_lengthscale
+            new_spatial_kernel.set_distance_matrix(TSR.tensor(spatial_x_df.to_numpy()))
+            spa_cov = new_spatial_kernel.kernel_gen()
+            nb_new_locs = len(new_spatial_x_df)
+            old_spa_cov = spa_cov[:-nb_new_locs, :-nb_new_locs]
+            new_old_spa_cov = spa_cov[-nb_new_locs:, :-nb_new_locs]
+            old_new_spa_cov = spa_cov[:-nb_new_locs, -nb_new_locs:]
+            new_spa_cov = spa_cov[-nb_new_locs:, -nb_new_locs:]
+            spa_decomp = self.result_logger.spatial_decomp_per_iter[:, :, i]
+            temp_decomp = self.result_logger.temporal_decomp_per_iter[:, :, i]
+            covs_decomp = self.result_logger.covs_decomp_per_iter[:, :, i]
+            old_decomp = spa_decomp
+            new_spa_decomp_mus = new_old_spa_cov @ old_spa_cov.inverse() @ old_decomp
+            new_spa_decomp_cov = new_spa_cov - (
+                new_old_spa_cov @ old_spa_cov.inverse() @ old_new_spa_cov
+            )
+            new_spa_decomp_cov = (new_spa_decomp_cov + new_spa_decomp_cov.T) / 2
+            if jitter is not None:
+                new_spa_decomp_cov += jitter * torch.eye(new_spa_decomp_cov.shape[0])
+            new_spa_decomp = (
+                torch.distributions.MultivariateNormal(new_spa_decomp_mus.T, new_spa_decomp_cov)
+                .sample()
+                .T
+            )
+            all_betas[:, :, :, i] = torch.einsum(
+                'il,jl,kl->ijk', [new_spa_decomp, temp_decomp, covs_decomp]
             )
 
         _, x_df = self._get_x_and_y_dfs_from_formula(new_data_df, self.formula)
