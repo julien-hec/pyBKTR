@@ -294,7 +294,7 @@ class BKTRRegressor:
         new_temporal_x_df: pd.DataFrame | None = None,
         jitter=None,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """Predict the response for new data.
+        """Predict the beta coefficients and response values for new data.
 
         Args:
             new_data_df (pd.DataFrame): New covariates. Must have the same columns as
