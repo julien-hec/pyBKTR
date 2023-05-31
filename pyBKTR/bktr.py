@@ -10,7 +10,6 @@ from formulaic.errors import FormulaicError
 
 from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
-from pyBKTR.plots import BKTRBetaPlotMaker
 from pyBKTR.result_logger import ResultLogger
 from pyBKTR.samplers import (
     KernelParamSampler,
@@ -41,6 +40,7 @@ class BKTRRegressor:
         'temporal_decomp',
         'covs_decomp',
         'result_logger',
+        'has_completed_sampling',
         'spatial_kernel',
         'temporal_kernel',
         'spatial_positions_df',
@@ -63,7 +63,6 @@ class BKTRRegressor:
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
-        'plot_maker',
     ]
     data_df: pd.DataFrame
     y: torch.Tensor
@@ -83,6 +82,7 @@ class BKTRRegressor:
     temporal_positions_df: pd.DataFrame
     # Result Logger
     result_logger: ResultLogger
+    has_completed_sampling: bool = False
     # Samplers
     spatial_params_sampler: KernelParamSampler
     temporal_params_sampler: KernelParamSampler
@@ -104,8 +104,6 @@ class BKTRRegressor:
     spatial_labels: list
     temporal_labels: list
     feature_labels: list
-    # Plot Maker
-    plot_maker: BKTRBetaPlotMaker | None
 
     # Constant string needed for dataframe index names
     spatial_index_name = 'location'
@@ -346,13 +344,13 @@ class BKTRRegressor:
             str: A summary of the MCMC regressor results containing information about the
                 MCMC sampling process and the estimated model's parameters.
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Summary can only be accessed after MCMC sampling.')
         return self.result_logger.summary()
 
     @property
     def beta_covariates_summary_df(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError(
                 'Covariate summary dataframe can only be accessed after MCMC sampling.'
             )
@@ -360,7 +358,7 @@ class BKTRRegressor:
 
     @property
     def y_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         y_est = self.result_logger.y_estimates_df.copy()
         y_est.iloc[:, 0].mask(self.omega.flatten().cpu() == 0, inplace=True)
@@ -368,13 +366,13 @@ class BKTRRegressor:
 
     @property
     def imputed_y_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Imputed Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates_df
 
     @property
     def beta_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
         return self.result_logger.beta_estimates_df
 
@@ -393,7 +391,7 @@ class BKTRRegressor:
         Returns:
             list[float]: The sampled betas through iteration for the given labels
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
         beta_per_iter_tensor = self.result_logger.get_iteration_betas_tensor(
             [spatial_label], [temporal_label], [feature_label]
@@ -421,7 +419,7 @@ class BKTRRegressor:
         Returns:
             pd.DataFrame: A dataframe with the summary for the given labels.
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
         return self.result_logger.get_beta_summary_df(
             spatial_labels, temporal_labels, feature_labels
@@ -429,164 +427,9 @@ class BKTRRegressor:
 
     @property
     def hyperparameters_per_iter_df(self):
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Hyperparameters can only be accessed after MCMC sampling.')
         return self.result_logger.hyperparameters_per_iter_df
-
-    def plot_temporal_betas(
-        self,
-        plot_feature_labels: list[str],
-        spatial_point_label: str,
-        show_figure: bool = True,
-        fig_width: int = 850,
-        fig_height: int = 550,
-    ):
-        """Create a plot of the beta values through time for a given spatial point and a set of
-            feature labels.
-
-        Args:
-            plot_feature_labels (list[str]): List of feature labels to plot.
-            spatial_point_label (str): Spatial point label to plot.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 850.
-            fig_height (int, optional): Figure height. Defaults to 550.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        self.plot_maker.plot_temporal_betas(
-            plot_feature_labels,
-            spatial_point_label,
-            show_figure,
-            fig_width,
-            fig_height,
-        )
-
-    def plot_spatial_betas(
-        self,
-        plot_feature_labels: list[str],
-        temporal_point_label: str,
-        nb_cols: int = 1,
-        mapbox_zoom: int = 9,
-        use_dark_mode: bool = True,
-        show_figure: bool = True,
-        fig_width: int = 850,
-        fig_height: int = 550,
-    ):
-        """Create a plot of beta values through space for a given temporal point and a set of
-            feature labels.
-
-        Args:
-            plot_feature_labels (list[str]): List of feature labels to plot.
-            temporal_point_label (str): Temporal point label to plot.
-            nb_cols (int, optional): Number of columns in the plot. Defaults to 1.
-            mapbox_zoom (int, optional): Mapbox zoom. Defaults to 9.
-            use_dark_mode (bool, optional): Whether to use dark mode. Defaults to True.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 850.
-            fig_height (int, optional): Figure height. Defaults to 550.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        self.plot_maker.plot_spatial_betas(
-            plot_feature_labels,
-            temporal_point_label,
-            self.spatial_positions_df,
-            nb_cols,
-            mapbox_zoom,
-            use_dark_mode,
-            show_figure,
-            fig_width,
-            fig_height,
-        )
-
-    def plot_beta_dists(
-        self,
-        labels_list: list[tuple[Any, Any, Any]],
-        show_figure: bool = True,
-        fig_width: int = 900,
-        fig_height: int = 600,
-    ):
-        """Plot the distribution of beta values for a given list of labels.
-
-        Args:
-            labels_list (list[tuple[Any, Any, Any]]): List of labels (spatial, temporal, feature)
-                for which to plot the beta distribution through iterations.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 900.
-            fig_height (int, optional): Figure height. Defaults to 600.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        betas_list = [self.get_iterations_betas(*lab) for lab in labels_list]
-        return self.plot_maker.plot_beta_dists(
-            labels_list, betas_list, show_figure, fig_width, fig_height
-        )
-
-    def plot_covariates_beta_dists(
-        self,
-        feature_labels: list[Any] | None = None,
-        show_figure: bool = True,
-        fig_width: int = 900,
-        fig_height: int = 600,
-    ):
-        """Plot the distribution of beta estimates regrouped by covariates.
-
-        Args:
-            feature_labels (list[Any] | None, optional): List of feature labels labels for
-                which to plot the beta estimates distribution. If None plot for all features.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 900.
-            fig_height (int, optional): Figure height. Defaults to 600.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        return self.plot_maker.plot_covariates_beta_dists(
-            feature_labels, show_figure, fig_width, fig_height
-        )
-
-    def plot_hyperparameters_distributions(
-        self,
-        hyperparameters: list[str] | None = None,
-        show_figure: bool = True,
-        fig_width: int = 900,
-        fig_height: int = 600,
-    ):
-        """Plot the distribution of hyperparameters through iterations.
-
-        Args:
-            hyperparameters (list[str] | None, optional): List of hyperparameters to plot.
-                If None, plot all hyperparameters. Defaults to None.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 900.
-            fig_height (int, optional): Figure height. Defaults to 600.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        return self.plot_maker.plot_hyperparameters_distributions(
-            hyperparameters, show_figure, fig_width, fig_height
-        )
-
-    def plot_hyperparameters_per_iter(
-        self,
-        hyperparameters: list[str] | None = None,
-        show_figure: bool = True,
-        fig_width: int = 800,
-        fig_height: int = 550,
-    ):
-        """Plot the distribution of hyperparameters through iterations.
-
-        Args:
-            hyperparameters (list[str] | None, optional): List of hyperparameters to plot.
-                If None, plot all hyperparameters. Defaults to None.
-            show_figure (bool, optional): Whether to show the figure. Defaults to True.
-            fig_width (int, optional): Figure width. Defaults to 1000.
-            fig_height (int, optional): Figure height. Defaults to 600.
-        """
-        if self.plot_maker is None:
-            raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        return self.plot_maker.plot_hyperparameters_per_iter(
-            hyperparameters, show_figure, fig_width, fig_height
-        )
 
     @staticmethod
     def _verify_kernel_labels(
@@ -867,14 +710,7 @@ class BKTRRegressor:
 
     def _log_final_iter_results(self):
         self.result_logger.log_final_iter_results()
-        self.plot_maker = BKTRBetaPlotMaker(
-            self.result_logger.get_beta_summary_df,
-            self.beta_estimates,
-            self.hyperparameters_per_iter_df,
-            self.spatial_labels,
-            self.temporal_labels,
-            self.feature_labels,
-        )
+        self.has_completed_sampling = True
 
     def _initialize_params(self):
         """Initialize all parameters that are needed before we start the MCMC sampling"""
