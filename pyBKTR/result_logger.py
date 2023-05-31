@@ -253,15 +253,18 @@ class ResultLogger:
             index=self.feature_labels,
             columns=self.moment_metrics + self.quantile_metrics,
         )
+        y_beta_index = pd.MultiIndex.from_product(
+            [self.spatial_labels, self.temporal_labels], names=['location', 'time']
+        )
         self.y_estimates_df = pd.DataFrame(
             self.y_estimates.flatten().cpu(),
             columns=[str(self.formula.lhs)],
-            index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
+            index=y_beta_index,
         )
         self.beta_estimates_df = pd.DataFrame(
             self.beta_estimates.reshape([-1, len(self.feature_labels)]).cpu(),
             columns=self.feature_labels,
-            index=pd.MultiIndex.from_product([self.spatial_labels, self.temporal_labels]),
+            index=y_beta_index,
         )
         self.hyperparameters_per_iter_df = pd.DataFrame(
             self.hparam_per_iter.t().cpu(),
