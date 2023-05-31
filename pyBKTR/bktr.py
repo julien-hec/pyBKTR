@@ -43,8 +43,8 @@ class BKTRRegressor:
         'result_logger',
         'spatial_kernel',
         'temporal_kernel',
-        'spatial_x_df',
-        'temporal_x_df',
+        'spatial_positions_df',
+        'temporal_positions_df',
         'spatial_params_sampler',
         'temporal_params_sampler',
         'tau_sampler',
@@ -80,8 +80,8 @@ class BKTRRegressor:
     # Kernels
     spatial_kernel: Kernel
     temporal_kernel: Kernel
-    spatial_x_df: pd.DataFrame | None
-    temporal_x_df: pd.DataFrame | None
+    spatial_positions_df: pd.DataFrame | None
+    temporal_positions_df: pd.DataFrame | None
     # Result Logger
     result_logger: ResultLogger
     # Samplers
@@ -115,17 +115,15 @@ class BKTRRegressor:
 
     def __init__(
         self,
+        data_df: pd.DataFrame,
+        spatial_positions_df: pd.DataFrame,
+        temporal_positions_df: pd.DataFrame,
         rank_decomp: int,
         burn_in_iter: int,
         sampling_iter: int,
-        data_df: pd.DataFrame,
         formula: None | str = None,
         spatial_kernel: Kernel = KernelMatern(smoothness_factor=3),
-        spatial_x_df: None | pd.DataFrame = None,
-        spatial_dist_df: None | pd.DataFrame = None,
         temporal_kernel: Kernel = KernelSE(),
-        temporal_x_df: None | pd.DataFrame = None,
-        temporal_dist_df: None | pd.DataFrame = None,
         sigma_r: float = 1e-2,
         a_0: float = 1e-6,
         b_0: float = 1e-6,
@@ -135,7 +133,7 @@ class BKTRRegressor:
         """Create a new *BKTRRegressor* object.
 
         Args:
-            covariates_df (pd.DataFrame):  A dataframe containing all the covariates
+            data_df (pd.DataFrame):  A dataframe containing all the covariates
                 through time and space. It is important that the dataframe has a two
                 indexes named `location` and `time` respectively. The dataframe should
                 also contain every possible combinations of `location` and `time`
@@ -152,24 +150,16 @@ class BKTRRegressor:
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
             sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
+            spatial_positions_df (pd.DataFrame): Spatial kernel input
+                tensor used to calculate covariates' distance. Vector of length equal to
+                the number of location points.
+            temporal_positions_df (pd.DataFrame): Temporal kernel input tensor
+                used to calculate covariate distance. Vector of length equal to
+                the number of time points.
             spatial_kernel (Kernel, optional): Spatial kernel Used.
                 Defaults to KernelMatern(smoothness_factor=3).
-            spatial_x_df (None | pd.DataFrame, optional): Spatial kernel input
-                tensor used to calculate covariate distance. Vector of length equal to nb
-                location points. Defaults to None.
-            spatial_dist_df (None | pd.DataFrame, optional): Spatial kernel
-                covariate distance. A two dimensions df (nb location points x nb location
-                points).  Should be used instead of `spatial_kernel_x` if distance was already
-                calculated. Defaults to None.
             temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
-            temporal_x_df (None | pd.DataFrame, optional): Temporal kernel input tensor
-                used to calculate covariate distance. Vector of length equal to nb time
-                points. Defaults to None.
-            temporal_dist_df (None | pd.DataFrame, optional): Temporal kernel covariate
-                distance. A two dimensions df (nb time points x nb time points).
-                Should be used instead of `temporal_kernel_x` if distance was already
-                calculated. Defaults to None.
             sigma_r (float, optional): Variance of the white noise process TODO
                 (Paper -- :math:`\\tau^{-1}`). Defaults to 1e-2.
             a_0 (float, optional): Initial value for the shape (:math:`\\alpha`) in the gamma
@@ -182,37 +172,26 @@ class BKTRRegressor:
                 file name (if None, no suffix is added). Defaults to None.
 
         Raises:
-            ValueError: If none or both `spatial_x_df` and `spatial_dist_df` are provided
-            ValueError: If none or both `temporal_x_df` and `temporal_dist_df` are provided
             ValueError: If `y` index is different than `covariates_df` location index
             ValueError: If `y` columns are different than `covariates_df` time index
         """
         self._verify_input_labels(
             data_df,
-            spatial_x_df,
-            spatial_dist_df,
-            temporal_x_df,
-            temporal_dist_df,
+            spatial_positions_df,
+            temporal_positions_df,
         )
 
         # Sort all df indexes
         for df in [
             data_df,
-            spatial_x_df,
-            spatial_dist_df,
-            temporal_x_df,
-            temporal_dist_df,
+            spatial_positions_df,
+            temporal_positions_df,
         ]:
             if df is not None:
                 df.sort_index(inplace=True)
-        # Only a subset of dataframes need to have their columns sorted
-        for df in [spatial_dist_df, temporal_dist_df]:
-            if df is not None:
-                df.sort_index(axis=1, inplace=True)
-
         self.data_df = data_df
-        self.spatial_x_df = spatial_x_df
-        self.temporal_x_df = temporal_x_df
+        self.spatial_positions_df = spatial_positions_df
+        self.temporal_positions_df = temporal_positions_df
 
         # Set formula and get model's matrix
         y_df, x_df = self._get_x_and_y_dfs_from_formula(data_df, formula)
@@ -225,18 +204,14 @@ class BKTRRegressor:
             y_df.index.get_level_values(self.temporal_index_name).unique().to_list()
         )
         self.feature_labels = x_df.columns.to_list()
-        if spatial_x_df is not None:
-            self.spatial_coord = spatial_x_df.copy()
+        if spatial_positions_df is not None:
+            self.spatial_coord = spatial_positions_df.copy()
         # Tensor assignation
         y_arr = y_df.to_numpy().reshape(len(self.spatial_labels), len(self.temporal_labels))
         self.omega = TSR.tensor(1 - np.isnan(y_arr))
         self.y = TSR.tensor(np.where(np.isnan(y_arr), 0, y_arr))
         covariates = TSR.tensor(x_df.to_numpy())
         self.tau = 1 / TSR.tensor(sigma_r)
-        temporal_x_tsr = TSR.get_df_tensor_or_none(temporal_x_df)
-        temporal_dist_tsr = TSR.get_df_tensor_or_none(temporal_dist_df)
-        spatial_x_tsr = TSR.get_df_tensor_or_none(spatial_x_df)
-        spatial_dist_tsr = TSR.get_df_tensor_or_none(spatial_dist_df)
 
         # Param assignation
         self.rank_decomp = rank_decomp
@@ -254,8 +229,8 @@ class BKTRRegressor:
         # Kernel assignation
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
-        self.spatial_kernel.set_distance_matrix(spatial_x_tsr, spatial_dist_tsr)
-        self.temporal_kernel.set_distance_matrix(temporal_x_tsr, temporal_dist_tsr)
+        self.spatial_kernel.set_positions(spatial_positions_df)
+        self.temporal_kernel.set_positions(temporal_positions_df)
         # Create first kernels
         self.spatial_kernel.kernel_gen()
         self.temporal_kernel.kernel_gen()
@@ -290,8 +265,8 @@ class BKTRRegressor:
     def predict(
         self,
         new_data_df: pd.DataFrame,
-        new_spatial_x_df: pd.DataFrame | None = None,
-        new_temporal_x_df: pd.DataFrame | None = None,
+        new_spatial_positions_df: pd.DataFrame | None = None,
+        new_temporal_positions_df: pd.DataFrame | None = None,
         jitter=None,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Predict the beta coefficients and response values for new data.
@@ -302,9 +277,9 @@ class BKTRRegressor:
                 of all old spatial coordinates with all new temporal coordinates, the combination
                 of all new spatial coordinates with all old temporal coordinates, and the
                 combination of all new spatial coordinates with all new temporal coordinates.
-            new_spatial_x_df (pd.DataFrame | None, optional): New spatial coordinates.
+            new_spatial_positions_df (pd.DataFrame | None, optional): New spatial coordinates.
                 If None, there should be no new spatial covariates. Defaults to None.
-            new_temporal_x_df (pd.DataFrame | None, optional): New temporal coordinates.
+            new_temporal_positions_df (pd.DataFrame | None, optional): New temporal coordinates.
                 If None, there should be no new temporal covariates. Defaults to None.
 
         Returns:
@@ -313,35 +288,46 @@ class BKTRRegressor:
             The second represents the forecasted response for all new spatial locations or
             temporal points.
         """
-        self._pred_valid_and_sort_data(new_data_df, new_spatial_x_df, new_temporal_x_df)
-
-        spatial_x_df = (
-            pd.concat([self.spatial_x_df, new_spatial_x_df], axis=0)
-            if new_spatial_x_df is not None
-            else self.spatial_x_df
+        self._pred_valid_and_sort_data(
+            new_data_df, new_spatial_positions_df, new_temporal_positions_df
         )
-        temporal_x_df = (
-            pd.concat([self.temporal_x_df, new_temporal_x_df], axis=0)
-            if new_temporal_x_df is not None
-            else self.temporal_x_df
+
+        spatial_positions_df = (
+            pd.concat([self.spatial_positions_df, new_spatial_positions_df], axis=0)
+            if new_spatial_positions_df is not None
+            else self.spatial_positions_df
+        )
+        temporal_positions_df = (
+            pd.concat([self.temporal_positions_df, new_temporal_positions_df], axis=0)
+            if new_temporal_positions_df is not None
+            else self.temporal_positions_df
         )
         data_df = pd.concat([self.data_df, new_data_df], axis=0)
         data_df_index = list(
-            itertools.product(spatial_x_df.index.to_list(), temporal_x_df.index.to_list())
+            itertools.product(
+                spatial_positions_df.index.to_list(), temporal_positions_df.index.to_list()
+            )
         )
         data_df = data_df.loc[data_df_index, :]
         self._verify_input_labels(
-            data_df, spatial_kernel_x=spatial_x_df, temporal_kernel_x=temporal_x_df
+            data_df,
+            spatial_positions_df=spatial_positions_df,
+            temporal_positions_df=temporal_positions_df,
         )
         all_betas = TSR.zeros(
-            [len(spatial_x_df), len(temporal_x_df), len(self.formula.rhs), self.sampling_iter]
+            [
+                len(spatial_positions_df),
+                len(temporal_positions_df),
+                len(self.formula.rhs),
+                self.sampling_iter,
+            ]
         )
         for i in range(self.sampling_iter):
             new_spa_decomp = self._pred_simu_new_decomp(
-                'spatial', i, spatial_x_df, new_spatial_x_df, jitter
+                'spatial', i, spatial_positions_df, new_spatial_positions_df, jitter
             )
             new_temp_decomp = self._pred_simu_new_decomp(
-                'temporal', i, temporal_x_df, new_temporal_x_df, jitter
+                'temporal', i, temporal_positions_df, new_temporal_positions_df, jitter
             )
             covs_decomp = self.result_logger.covs_decomp_per_iter[:, :, i]
             all_betas[:, :, :, i] = torch.einsum(
@@ -351,7 +337,7 @@ class BKTRRegressor:
         new_betas = all_betas.mean(dim=-1)
         _, x_df = self._get_x_and_y_dfs_from_formula(data_df, self.formula)
         covariates = TSR.tensor(x_df.to_numpy()).reshape(
-            [len(spatial_x_df), len(temporal_x_df), -1]
+            [len(spatial_positions_df), len(temporal_positions_df), -1]
         )
         new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
         new_beta_df = pd.DataFrame(
@@ -496,7 +482,6 @@ class BKTRRegressor:
         self,
         plot_feature_labels: list[str],
         temporal_point_label: str,
-        geo_coordinates: pd.DataFrame | None = None,
         nb_cols: int = 1,
         mapbox_zoom: int = 9,
         use_dark_mode: bool = True,
@@ -521,16 +506,10 @@ class BKTRRegressor:
         """
         if self.plot_maker is None:
             raise RuntimeError('Plots can only be accessed after MCMC sampling.')
-        if geo_coordinates is None and self.spatial_coord is None:
-            raise RuntimeError(
-                'If `x_spatial_df` is not provided at the bktr regressor creation, then the'
-                ' geo coordinates must be passed to the `create_spatial_beta_plot` method.'
-            )
-        geo_coord = geo_coordinates if geo_coordinates is not None else self.spatial_coord
         self.plot_maker.plot_spatial_betas(
             plot_feature_labels,
             temporal_point_label,
-            geo_coord,
+            self.spatial_positions_df,
             nb_cols,
             mapbox_zoom,
             use_dark_mode,
@@ -630,76 +609,60 @@ class BKTRRegressor:
 
     @staticmethod
     def _verify_kernel_labels(
-        kernel_x: pd.DataFrame | None,
-        kernel_dist: pd.DataFrame | None,
+        kernel_positions: pd.DataFrame,
         expected_labels: set,
         kernel_type: Literal['spatial', 'temporal'],
     ):
         """Verify if kernel inputs are valid and align with covariates labels.
 
         Args:
-            kernel_x (pd.DataFrame | None): Kernel x to be provided to a kernel.
-            kernel_dist (pd.DataFrame | None): Kernel distance to be provided to kernel.
+            kernel_positions (pd.DataFrame): Kernel x to be provided to a kernel.
             expected_labels (set): List of spatial/temporal labels used in covariates.
             kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): Type of kernel.
 
         Raises:
-            ValueError: If both or none of kernel_x and kernel_dist are provided.
-            ValueError: If kernel_x is provided and its size is not appropriate.
-            ValueError: If kernel_dist is provided and its size is not appropriate.
+            ValueError: If kernel_positions size is not appropriate.
         """
         cov_related_indx_name = 'location' if kernel_type == 'spatial' else 'time'
-        if (kernel_x is None) == (kernel_dist is None):
+        if expected_labels != set(kernel_positions.index):
             raise ValueError(
-                f'Either `{kernel_type}_kernel_x` or `{kernel_type}_kernel_dist` must be provided'
-            )
-        if kernel_x is not None and expected_labels != set(kernel_x.index):
-            raise ValueError(
-                f'`{kernel_type}_x` must have the same index as the covariates\''
+                f'`{kernel_type}_positions` must have the same index as the covariates\''
                 f' {cov_related_indx_name} index.'
-            )
-        if kernel_dist is not None and not (
-            expected_labels == set(kernel_dist.index) == set(kernel_dist.columns)
-        ):
-            raise ValueError(
-                f'`{kernel_type}_dist` index and columns must have the same values as the'
-                f' covariates\' {cov_related_indx_name} index.'
             )
 
     @classmethod
     def _verify_input_labels(
         cls,
         data_df: pd.DataFrame,
-        spatial_kernel_x: pd.DataFrame | None = None,
-        spatial_kernel_dist: pd.DataFrame | None = None,
-        temporal_kernel_x: pd.DataFrame | None = None,
-        temporal_kernel_dist: pd.DataFrame | None = None,
+        spatial_positions_df: pd.DataFrame,
+        temporal_positions_df: pd.DataFrame,
     ):
         """Verify the validity of BKTR dataframe inputs' labels
 
         Args:
-            data_df (pd.DataFrame): data_df in __init__
-            spatial_kernel_x (pd.DataFrame | None): spatial_kernel_x in __init__
-            spatial_kernel_dist (pd.DataFrame | None): spatial_kernel_dist in __init__
-            temporal_kernel_x (pd.DataFrame | None): temporal_kernel_x in __init__
-            temporal_kernel_dist (pd.DataFrame | None): temporal_kernel_dist in __init__
+            data_df (pd.DataFrame): The data_df from BKTRRegressor __init__
+            spatial_positions_df (pd.DataFrame | None): spatial_positions_df from __init__
+            temporal_positions_df (pd.DataFrame | None): temporal_positions_df from __init__
 
         Raises:
-            ValueError: If y index do not correspond with spatial covariates index
-            ValueError: If y columns do not correspond with temporal covariates index
+            ValueError: If data_df does not contain a multiindex with ['location', 'time']
+            ValueError: If data_df location index do not correspond with spatial_positions_df
+            ValueError: If data_df time index do not correspond with temporal_positions_df
         """
         if data_df.index.names != ['location', 'time']:
             raise ValueError('The data_df dataframe must have a [`location`, `time`] multiindex.')
         loc_set = set(data_df.index.get_level_values('location'))
         time_set = set(data_df.index.get_level_values('time'))
+        product_set = set(itertools.product(loc_set, time_set))
+        data_df_index_set = set(data_df.index)
 
-        if len(data_df) != len(loc_set) * len(time_set):
+        if data_df_index_set != product_set:
             raise ValueError(
                 'The data_df dataframe must have a row for every possible'
                 ' combination of location and time. Even if response values are missing (NaN).'
             )
-        cls._verify_kernel_labels(spatial_kernel_x, spatial_kernel_dist, loc_set, 'spatial')
-        cls._verify_kernel_labels(temporal_kernel_x, temporal_kernel_dist, time_set, 'temporal')
+        cls._verify_kernel_labels(spatial_positions_df, loc_set, 'spatial')
+        cls._verify_kernel_labels(temporal_positions_df, time_set, 'temporal')
 
     def _get_x_and_y_dfs_from_formula(
         self, data_df: pd.DataFrame, formula: str | None
@@ -982,7 +945,7 @@ class BKTRRegressor:
                 param.value = self.result_logger.hyperparameters_per_iter_df.loc[
                     iter_no + 1, param_full_repr
                 ]
-        new_kernel.set_distance_matrix(TSR.tensor(position_df.to_numpy()))
+        new_kernel.set_positions(position_df)
         cov_mat = new_kernel.kernel_gen()
         old_cov = cov_mat[:-nb_new_pos, :-nb_new_pos]
         new_old_cov = cov_mat[-nb_new_pos:, :-nb_new_pos]
@@ -1015,11 +978,11 @@ class BKTRRegressor:
             raise ValueError(
                 f'The `new_{old_df_name}` columns should correspond with `{old_df_name}` columns.'
             )
-        new_x_labels_set = set(new_df.index.unique().to_list())
-        old_x_labels_set = set(old_df.index.unique().to_list())
-        if len(old_x_labels_set) != len(old_df):
+        new_pos_labels_set = set(new_df.index.unique().to_list())
+        old_pos_labels_set = set(old_df.index.unique().to_list())
+        if len(old_pos_labels_set) != len(old_df):
             raise ValueError(f'All index labels in new_{old_df_name} should be unique.')
-        if new_x_labels_set & old_x_labels_set:
+        if new_pos_labels_set & old_pos_labels_set:
             raise ValueError(
                 f'The index labels in new_{old_df_name} should not exists in {old_df_name}.'
             )
@@ -1027,24 +990,25 @@ class BKTRRegressor:
     def _pred_valid_and_sort_data(
         self,
         new_data_df: pd.DataFrame,
-        new_spatial_x_df: pd.DataFrame | None,
-        new_temporal_x_df: pd.DataFrame | None,
+        new_spatial_positions_df: pd.DataFrame | None,
+        new_temporal_positions_df: pd.DataFrame | None,
     ) -> None:
         """Check that the new data and covariates are valid and sort them by index.
 
         Args:
             new_data_df (pd.DataFrame): A dataframe with the new data to predict.
-            new_spatial_x_df (pd.DataFrame | None): A dataframe with the new spatial locations.
-            new_temporal_x_df (pd.DataFrame | None): A dataframe with the new time points position.
+            new_spatial_positions_df (pd.DataFrame | None): A dataframe with new spatial locations.
+            new_temporal_positions_df (pd.DataFrame | None): A dataframe with new time positions.
         """
-        if new_spatial_x_df is None and new_temporal_x_df is None:
+        if new_spatial_positions_df is None and new_temporal_positions_df is None:
             raise ValueError(
-                'At least one of new_x_spatial_df and new_x_temporal_df must be provided.'
+                'At least one of new_positions_spatial_df and'
+                ' new_positions_temporal_df must be provided.'
             )
         for df in [
             new_data_df,
-            new_spatial_x_df,
-            new_temporal_x_df,
+            new_spatial_positions_df,
+            new_temporal_positions_df,
         ]:
             if df is not None:
                 df.sort_index(inplace=True)
@@ -1055,29 +1019,33 @@ class BKTRRegressor:
         # Check spatial locations dataframes integrity
         x_spa_loc_labels = None
         new_spa_needed_indx = set()
-        if new_spatial_x_df is not None:
-            self._check_pred_dfs_integrity('spatial_x_df', self.spatial_x_df, new_spatial_x_df)
-            x_spa_loc_labels = new_spatial_x_df.index.unique().to_list()
-            old_time_labels = self.temporal_x_df.index.to_list()
+        if new_spatial_positions_df is not None:
+            self._check_pred_dfs_integrity(
+                'spatial_positions_df', self.spatial_positions_df, new_spatial_positions_df
+            )
+            x_spa_loc_labels = new_spatial_positions_df.index.unique().to_list()
+            old_time_labels = self.temporal_positions_df.index.to_list()
             new_spa_needed_indx = set(itertools.product(x_spa_loc_labels, old_time_labels))
             if not new_spa_needed_indx.issubset(data_df_labs_set):
                 raise ValueError(
                     'The index of `new_data_df` should include the combination of all previous'
-                    ' time points and all new locations provided in `new_spatial_x_df`.'
+                    ' time points and all new locations provided in `new_spatial_positions_df`.'
                 )
 
         # Check temporal points dataframes integrity
         x_temp_loc_labels = None
         new_temp_needed_indx = set()
-        if new_temporal_x_df is not None:
-            self._check_pred_dfs_integrity('temporal_x_df', self.temporal_x_df, new_temporal_x_df)
-            x_temp_loc_labels = new_temporal_x_df.index.unique().to_list()
-            old_spa_labels = self.spatial_x_df.index.to_list()
+        if new_temporal_positions_df is not None:
+            self._check_pred_dfs_integrity(
+                'temporal_positions_df', self.temporal_positions_df, new_temporal_positions_df
+            )
+            x_temp_loc_labels = new_temporal_positions_df.index.unique().to_list()
+            old_spa_labels = self.spatial_positions_df.index.to_list()
             new_temp_needed_indx = set(itertools.product(old_spa_labels, x_temp_loc_labels))
             if not new_temp_needed_indx.issubset(data_df_labs_set):
                 raise ValueError(
                     'The index of `new_data_df` should include the combination of all previous'
-                    ' locations and all new time points provided in `new_temporal_x_df`.'
+                    ' locations and all new time points provided in `new_temporal_positions_df`.'
                 )
 
         # Check combination of new spatial and temporal dataframes integrity
@@ -1087,13 +1055,14 @@ class BKTRRegressor:
             if not combi_needed_indx.issubset(data_df_labs_set):
                 raise ValueError(
                     'The index of`new_data_df` should include the combination of all new time'
-                    'points in new_temporal_x_df and all new locations in new_spatial_x_df.'
+                    'points in `new_temporal_positions_df` and all new locations'
+                    ' in `new_spatial_positions_df`.'
                 )
 
         if data_df_labs_set != new_spa_needed_indx | new_temp_needed_indx | combi_needed_indx:
             raise ValueError(
                 'The index of `data_df` should only contain:'
-                ' 1. The combination of all new locations and old time points;'
-                ' 2. The combination of all new time points and old locations;'
-                ' 3. The combination of all new time poins and new locations.'
+                '\n\t1. The combination of all new locations and old time points;'
+                '\n\t2. The combination of all new time points and old locations;'
+                '\n\t3. The combination of all new time poins and new locations;'
             )

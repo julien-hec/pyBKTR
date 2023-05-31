@@ -233,10 +233,10 @@ def simulate_spatiotemporal_data(
     ).sample()
 
     spatial_kernel.distance_type = DIST_TYPE.EUCLIDEAN
-    spatial_kernel.set_distance_matrix(spa_pos)
+    spatial_kernel.set_positions(spa_pos_df)
     spatial_covariance = spatial_kernel.kernel_gen()
     temporal_kernel.distance_type = DIST_TYPE.EUCLIDEAN
-    temporal_kernel.set_distance_matrix(temp_pos)
+    temporal_kernel.set_positions(temp_pos_df)
     temporal_covariance = temporal_kernel.kernel_gen()
 
     beta_covariance = TSR.kronecker_prod(

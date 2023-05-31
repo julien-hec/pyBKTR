@@ -6,6 +6,7 @@ from enum import Enum
 from functools import cached_property
 from typing import Callable, Literal
 
+import pandas as pd
 import torch
 from plotly import express as px
 
@@ -116,15 +117,10 @@ class Kernel(abc.ABC):
         self.add_jitter_to_kernel()
         return self.kernel
 
-    def set_distance_matrix(
-        self, x: None | torch.Tensor = None, distance_matrix: None | torch.Tensor = None
-    ):
-        if (x is None) == (distance_matrix is None):
-            raise ValueError('Either `x` or `distance_matrix` must be provided')
-        elif x is not None:
-            self.distance_matrix = DistanceCalculator.get_matrix(x, self.distance_type)
-        else:
-            self.distance_matrix = distance_matrix
+    def set_positions(self, position_df: pd.DataFrame):
+        self.positions_df = position_df
+        positions_tensor = TSR.tensor(position_df.to_numpy())
+        self.distance_matrix = DistanceCalculator.get_matrix(positions_tensor, self.distance_type)
 
     def plot(self, show_figure: bool = True):
         fig = px.imshow(
@@ -154,19 +150,15 @@ class Kernel(abc.ABC):
 class KernelWhiteNoise(Kernel):
     """White Noise Kernel"""
 
-    variance: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'White Noise Kernel'
 
     def __init__(
         self,
-        variance: KernelParameter = KernelParameter(1, is_fixed=True),
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, DIST_TYPE.NONE, jitter_value)
-        self.variance = variance
-        self.variance.set_kernel(self, 'variance')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return self.distance_matrix * self.variance.value
@@ -175,20 +167,16 @@ class KernelWhiteNoise(Kernel):
 class KernelLinear(Kernel):
     """Linear Kernel"""
 
-    # TODO Why is the variance a kernel param here?????
     variance: KernelParameter
     distance_matrix: torch.Tensor
     _name: str = 'Linear Kernel'
 
     def __init__(
         self,
-        variance: KernelParameter = KernelParameter(1, lower_bound=0),
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, DIST_TYPE.DOT_PRODUCT, jitter_value)
-        self.variance = variance
-        self.variance.set_kernel(self, 'variance')
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return self.distance_matrix + self.variance.value
@@ -363,9 +351,7 @@ class KernelComposed(Kernel):
                 return self.left_kernel._core_kernel_fn() * self.right_kernel._core_kernel_fn()
         raise RuntimeError('Composition operation not implemented')
 
-    def set_distance_matrix(
-        self, x: None | torch.Tensor = None, distance_matrix: None | torch.Tensor = None
-    ):
-        super().set_distance_matrix(x, distance_matrix)
-        self.left_kernel.set_distance_matrix(x, distance_matrix)
-        self.right_kernel.set_distance_matrix(x, distance_matrix)
+    def set_positions(self, positions_df: pd.DataFrame) -> None:
+        super().set_positions(positions_df)
+        self.left_kernel.set_positions(positions_df)
+        self.right_kernel.set_positions(positions_df)
