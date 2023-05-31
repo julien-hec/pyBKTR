@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Literal
 import pandas as pd
 import torch
 
-from pyBKTR.distances import DIST_TYPE
 from pyBKTR.tensor_ops import TSR
 
 if TYPE_CHECKING:
@@ -232,10 +231,8 @@ def simulate_spatiotemporal_data(
         covariance_matrix=TSR.eye(nb_covs),
     ).sample()
 
-    spatial_kernel.distance_type = DIST_TYPE.EUCLIDEAN
     spatial_kernel.set_positions(spa_pos_df)
     spatial_covariance = spatial_kernel.kernel_gen()
-    temporal_kernel.distance_type = DIST_TYPE.EUCLIDEAN
     temporal_kernel.set_positions(temp_pos_df)
     temporal_covariance = temporal_kernel.kernel_gen()
 
