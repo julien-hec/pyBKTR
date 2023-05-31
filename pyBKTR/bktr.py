@@ -82,7 +82,7 @@ class BKTRRegressor:
     temporal_positions_df: pd.DataFrame
     # Result Logger
     result_logger: ResultLogger
-    has_completed_sampling: bool = False
+    has_completed_sampling: bool
     # Samplers
     spatial_params_sampler: KernelParamSampler
     temporal_params_sampler: KernelParamSampler
@@ -167,6 +167,7 @@ class BKTRRegressor:
             results_export_suffix (str | None, optional): Suffix added at the end of the csv
                 file name (if None, no suffix is added). Defaults to None.
         """
+        self.has_completed_sampling = False
         self._verify_input_labels(data_df, spatial_positions_df, temporal_positions_df)
 
         # Sort all df indexes
