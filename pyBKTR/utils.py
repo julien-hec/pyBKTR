@@ -151,7 +151,7 @@ def get_dim_labels(dim_prefix: str, max_value: int) -> str:
 
 
 def simulate_spatiotemporal_data(
-    nb_spatial_locations: int,
+    nb_locations: int,
     nb_time_points: int,
     nb_spatial_dimensions: int,
     spatial_scale: float,
@@ -161,7 +161,6 @@ def simulate_spatiotemporal_data(
     spatial_kernel: Kernel,
     temporal_kernel: Kernel,
     noise_variance_scale: float,
-    jitter_value: float | None = 1e-3,
 ) -> dict[str, pd.DataFrame]:
     """Simulate spatiotemporal data using kernel covariances.
 
@@ -176,8 +175,6 @@ def simulate_spatiotemporal_data(
         spatial_kernel (Kernel): Spatial kernel
         temporal_kernel (Kernel): Temporal kernel
         noise_variance_scale (float): Noise variance scale
-        jitter_value (float, optional): Jitter value added to the completed covariance
-            matrix to help with numerical stability. Defaults to 1e-4.
 
     Returns:
         dict[str, pd.DataFrame]: A dictionnary containing 4 dataframes:
@@ -186,7 +183,7 @@ def simulate_spatiotemporal_data(
             - `temporal_positions_df` contains the time points and their coordinates
             - `beta_df` contains the true beta coefficients
     """
-    spa_pos = TSR.rand([nb_spatial_locations, nb_spatial_dimensions]) * spatial_scale
+    spa_pos = TSR.rand([nb_locations, nb_spatial_dimensions]) * spatial_scale
     temp_pos = TSR.tensor(
         [time_scale / (nb_time_points - 1) * x for x in range(0, nb_time_points)]
     )
@@ -194,7 +191,7 @@ def simulate_spatiotemporal_data(
 
     # Dimension labels
     s_dims = get_dim_labels('s_dim', nb_spatial_dimensions)
-    s_locs = get_dim_labels('s_loc', nb_spatial_locations)
+    s_locs = get_dim_labels('s_loc', nb_locations)
     t_points = get_dim_labels('t_point', nb_time_points)
     s_covs = get_dim_labels('s_cov', len(spatial_covariates_means))
     t_covs = get_dim_labels('t_cov', len(temporal_covariates_means))
@@ -204,29 +201,25 @@ def simulate_spatiotemporal_data(
 
     spa_means = TSR.tensor(spatial_covariates_means)
     nb_spa_covariates = len(spa_means)
-    spa_covariates = TSR.randn([nb_spatial_locations, nb_spa_covariates])
+    spa_covariates = TSR.randn([nb_locations, nb_spa_covariates])
     spa_covariates = spa_covariates + spa_means
 
     temp_means = TSR.tensor(temporal_covariates_means)
     nb_temp_covariates = len(temp_means)
     temp_covariates = TSR.randn([nb_time_points, nb_temp_covariates])
     temp_covariates = temp_covariates + temp_means
-    inter_covariates = TSR.ones([nb_spatial_locations, nb_time_points, 1])
+    intercept_covariates = TSR.ones([nb_locations, nb_time_points, 1])
     covs = torch.concat(
         [
-            inter_covariates,
-            spa_covariates.unsqueeze(1).expand(
-                nb_spatial_locations, nb_time_points, nb_spa_covariates
-            ),
-            temp_covariates.unsqueeze(0).expand(
-                nb_spatial_locations, nb_time_points, nb_temp_covariates
-            ),
+            intercept_covariates,
+            spa_covariates.unsqueeze(1).expand(nb_locations, nb_time_points, nb_spa_covariates),
+            temp_covariates.unsqueeze(0).expand(nb_locations, nb_time_points, nb_temp_covariates),
         ],
         dim=2,
     )
     nb_covs = 1 + nb_spa_covariates + nb_temp_covariates
 
-    covs_covariance = torch.distributions.Wishart(
+    covs_covariance: torch.Tensor = torch.distributions.Wishart(
         df=nb_covs,
         covariance_matrix=TSR.eye(nb_covs),
     ).sample()
@@ -236,24 +229,21 @@ def simulate_spatiotemporal_data(
     temporal_kernel.set_positions(temp_pos_df)
     temporal_covariance = temporal_kernel.kernel_gen()
 
-    beta_covariance = TSR.kronecker_prod(
-        TSR.kronecker_prod(spatial_covariance, temporal_covariance),
-        covs_covariance,
+    # Use Matrix Normal distribution to sample beta values (to reduce memory usage)
+    # the second covariance matrix is the Kronecker product of temporal and covariates covariances
+    chol_spa: torch.Tensor = torch.linalg.cholesky(spatial_covariance)
+    chol_temp_covs = torch.linalg.cholesky(
+        TSR.kronecker_prod(temporal_covariance, covs_covariance)
     )
-    # add a jitter to the covariance matrix to make it positive definite
-    if jitter_value:
-        beta_covariance += TSR.eye(beta_covariance.shape[0]) * jitter_value
-    beta_means = TSR.zeros(nb_spatial_locations * nb_time_points * nb_covs)
-    beta_vec: torch.Tensor = torch.distributions.MultivariateNormal(
-        beta_means, beta_covariance
-    ).sample()
-    beta_values = beta_vec.reshape([nb_spatial_locations, nb_time_points, nb_covs])
+    beta_values = (
+        chol_spa @ TSR.randn([nb_locations, nb_time_points * nb_covs]) @ chol_temp_covs.T
+    ).reshape([nb_locations, nb_time_points, nb_covs])
     y_val = torch.einsum('ijk,ijk->ij', covs, beta_values)
-    err = TSR.randn([nb_spatial_locations, nb_time_points]) * (noise_variance_scale**0.5)
+    err = TSR.randn([nb_locations, nb_time_points]) * (noise_variance_scale**0.5)
     y_val += err
-    y_val = y_val.reshape([nb_spatial_locations * nb_time_points, 1])
+    y_val = y_val.reshape([nb_locations * nb_time_points, 1])
     # We remove the intercept from the covariates
-    covs = covs.reshape([nb_spatial_locations * nb_time_points, nb_covs])[:, 1:]
+    covs = covs.reshape([nb_locations * nb_time_points, nb_covs])[:, 1:]
     spa_temp_df_index = pd.MultiIndex.from_product(
         [spa_pos_df.index, temp_pos_df.index],
         names=['location', 'time'],
@@ -264,7 +254,7 @@ def simulate_spatiotemporal_data(
         index=spa_temp_df_index,
     )
     beta_df = pd.DataFrame(
-        beta_values.reshape([nb_spatial_locations * nb_time_points, nb_covs]),
+        beta_values.reshape([nb_locations * nb_time_points, nb_covs]),
         columns=['Intercept'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
