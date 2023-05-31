@@ -183,8 +183,8 @@ def simulate_spatiotemporal_data(
     Returns:
         dict[str, pd.DataFrame]: A dictionnary containing 4 dataframes:
             - `data_df` contains the response variable and the covariates
-            - `spatial_locations_df` contains the spatial locations and their coordinates
-            - `temporal_points_df` contains the time points and their coordinates
+            - `spatial_positions_df` contains the spatial locations and their coordinates
+            - `temporal_positions_df` contains the time points and their coordinates
             - `beta_df` contains the true beta coefficients
     """
     spa_pos = TSR.rand([nb_spatial_locations, nb_spatial_dimensions]) * spatial_scale
@@ -200,8 +200,8 @@ def simulate_spatiotemporal_data(
     s_covs = get_dim_labels('s_cov', len(spatial_covariates_means))
     t_covs = get_dim_labels('t_cov', len(temporal_covariates_means))
 
-    spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=s_locs)
-    temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=t_points)
+    spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=pd.Index(s_locs, name='location'))
+    temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=pd.Index(t_points, name='time'))
 
     spa_means = TSR.tensor(spatial_covariates_means)
     nb_spa_covariates = len(spa_means)
@@ -273,7 +273,7 @@ def simulate_spatiotemporal_data(
     )
     return {
         'data_df': data_df,
-        'spatial_locations_df': spa_pos_df,
-        'temporal_points_df': temp_pos_df,
+        'spatial_positions_df': spa_pos_df,
+        'temporal_positions_df': temp_pos_df,
         'beta_df': beta_df,
     }

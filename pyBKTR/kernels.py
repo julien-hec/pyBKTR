@@ -125,13 +125,14 @@ class Kernel(abc.ABC):
     def plot(self, show_figure: bool = True):
         fig = px.imshow(
             self.kernel_gen(),
-            title=f'{self._name} Covariance Matrix',
+            title=f'{self._name} Covariance Matrix Heatmap',
             color_continuous_scale=px.colors.sequential.Viridis,
         )
+        axis_title = self.positions_df.index.name or 'x'
         fig.update_layout(
-            xaxis_title='<b>x</b>',
-            yaxis_title="<b>x</b>'",
-            coloraxis_colorbar={'title': 'Covariance Value'},
+            xaxis_title=f'<b>{axis_title}</b>',
+            yaxis_title=f"<b>{axis_title}</b>'",
+            coloraxis_colorbar={'title': 'Covariance'},
             height=700,
             width=700,
         )
