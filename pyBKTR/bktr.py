@@ -774,13 +774,13 @@ class BKTRRegressor:
     def _calc_spatial_marginal_ll(self):
         """Calculate the spatial marginal likelihood"""
         return self.spatial_ll_evaluator.calc_likelihood(
-            self.spatial_kernel.kernel, self.temporal_decomp, self.covs_decomp, self.tau
+            self.spatial_kernel.covariance_matrix, self.temporal_decomp, self.covs_decomp, self.tau
         )
 
     def _calc_temporal_marginal_ll(self):
         """Calculate the temporal marginal likelihood"""
         return self.temporal_ll_evaluator.calc_likelihood(
-            self.temporal_kernel.kernel, self.spatial_decomp, self.covs_decomp, self.tau
+            self.temporal_kernel.covariance_matrix, self.spatial_decomp, self.covs_decomp, self.tau
         )
 
     def _sample_kernel_hparam(self):

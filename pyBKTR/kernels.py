@@ -80,9 +80,9 @@ class Kernel(abc.ABC):
 
     kernel_variance: float
     jitter_value: float | None
-    distance_matrix: torch.Tensor | None = None
+    distance_matrix: torch.Tensor | None
     parameters: list[KernelParameter] = []
-    kernel: torch.Tensor
+    covariance_matrix: torch.Tensor
     distance_type: type[DIST_TYPE]
 
     @property
@@ -106,16 +106,14 @@ class Kernel(abc.ABC):
         if self.jitter_value == 0:
             return
         jitter_val = TSR.default_jitter if self.jitter_value is None else self.jitter_value
-        self.kernel += jitter_val * TSR.eye(self.kernel.shape[0])
+        self.covariance_matrix += jitter_val * TSR.eye(self.covariance_matrix.shape[0])
 
     def kernel_gen(self) -> torch.Tensor:
-        if self.distance_matrix is None:
-            raise RuntimeError(
-                'Set kernel distance via `set_distance_matrix` before kernel evaluation.'
-            )
-        self.kernel = self.kernel_variance * self._core_kernel_fn()
+        if self.positions_df is None:
+            raise RuntimeError('Set `positions_df` via `set_positions` before kernel evaluation.')
+        self.covariance_matrix = self.kernel_variance * self._core_kernel_fn()
         self.add_jitter_to_kernel()
-        return self.kernel
+        return self.covariance_matrix
 
     def set_positions(self, position_df: pd.DataFrame):
         self.positions_df = position_df
@@ -151,7 +149,7 @@ class Kernel(abc.ABC):
 class KernelWhiteNoise(Kernel):
     """White Noise Kernel"""
 
-    distance_matrix: torch.Tensor
+    distance_matrix: None
     _name: str = 'White Noise Kernel'
 
     def __init__(
@@ -162,25 +160,7 @@ class KernelWhiteNoise(Kernel):
         super().__init__(kernel_variance, DIST_TYPE.NONE, jitter_value)
 
     def _core_kernel_fn(self) -> torch.Tensor:
-        return self.distance_matrix * self.variance.value
-
-
-class KernelLinear(Kernel):
-    """Linear Kernel"""
-
-    variance: KernelParameter
-    distance_matrix: torch.Tensor
-    _name: str = 'Linear Kernel'
-
-    def __init__(
-        self,
-        kernel_variance: float = 1,
-        jitter_value: float | None = None,
-    ) -> None:
-        super().__init__(kernel_variance, DIST_TYPE.DOT_PRODUCT, jitter_value)
-
-    def _core_kernel_fn(self) -> torch.Tensor:
-        return self.distance_matrix + self.variance.value
+        return TSR.eye(len(self.positions_df))
 
 
 class KernelSE(Kernel):

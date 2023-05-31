@@ -2,15 +2,14 @@ from enum import Enum
 
 import torch
 
-from pyBKTR.tensor_ops import TSR
-
 EARTH_RADIUS_KM = 6371.2
 
 
 class DIST_TYPE(Enum):
     EUCLIDEAN = 'euclidean'
     HAVERSINE = 'haversine'
-    DOT_PRODUCT = 'dot product'
+    MANHATTAN = 'manhattan'
+    CHEBYSHEV = 'chebyshev'
     NONE = 'none'
 
 
@@ -18,14 +17,16 @@ class DistanceCalculator:
     @classmethod
     def get_matrix(cls, x: torch.Tensor, distance_type: DIST_TYPE, earth_radius=EARTH_RADIUS_KM):
         match distance_type:
-            case DIST_TYPE.NONE:
-                return cls.calc_none_dist(x, x)
             case DIST_TYPE.EUCLIDEAN:
                 return cls.calc_euclidean_dist(x, x)
+            case DIST_TYPE.MANHATTAN:
+                return cls.calc_manhattan_dist(x, x)
+            case DIST_TYPE.CHEBYSHEV:
+                return cls.calc_chebyshev_dist(x, x)
             case DIST_TYPE.HAVERSINE:
                 return cls.calc_haversine_dist(x, x, earth_radius)
-            case DIST_TYPE.DOT_PRODUCT:
-                return cls.calc_dotproduct_dist(x, x)
+            case DIST_TYPE.NONE:
+                return None
 
     @staticmethod
     def check_tensor_dimensions(
@@ -44,11 +45,6 @@ class DistanceCalculator:
             raise RuntimeError(
                 f'Distance params last dimension should contain {expected_last_dim_shape} elements'
             )
-
-    @classmethod
-    def calc_none_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
-        return TSR.eye(x1.shape[0])
 
     @classmethod
     def calc_euclidean_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
@@ -71,11 +67,13 @@ class DistanceCalculator:
         return earth_radius * 2 * torch.atan2(a.sqrt(), (1 - a).sqrt())
 
     @classmethod
-    def calc_dotproduct_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        if x1.shape != x2.shape:
-            raise RuntimeError('Distance params should have same dimension')
-        xu1, xu2 = x1.unsqueeze(0), x2.unsqueeze(1)
-        dist = xu1 * xu2
-        if x1.ndim > 1:
-            dist = dist.sum(-1)
-        return dist
+    def calc_manhattan_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
+        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
+        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
+        return (xu1 - xu2.transpose(0, 1)).abs().sum(2)
+
+    @classmethod
+    def calc_chebyshev_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
+        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
+        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
+        return (xu1 - xu2.transpose(0, 1)).abs().max(2)[0]
