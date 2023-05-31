@@ -205,7 +205,7 @@ class KernelSE(Kernel):
         self,
         lengthscale: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
@@ -229,7 +229,7 @@ class KernelRQ(Kernel):
         lengthscale: KernelParameter = KernelParameter(log(2)),
         alpha: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
@@ -257,7 +257,7 @@ class KernelPeriodic(Kernel):
         lengthscale: KernelParameter = KernelParameter(log(2)),
         period_length: KernelParameter = KernelParameter(log(2)),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.LINEAR,
+        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
         super().__init__(kernel_variance, distance_type, jitter_value)
