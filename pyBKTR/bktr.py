@@ -63,7 +63,6 @@ class BKTRRegressor:
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
-        'spatial_coord',
         'plot_maker',
     ]
     data_df: pd.DataFrame
@@ -80,8 +79,8 @@ class BKTRRegressor:
     # Kernels
     spatial_kernel: Kernel
     temporal_kernel: Kernel
-    spatial_positions_df: pd.DataFrame | None
-    temporal_positions_df: pd.DataFrame | None
+    spatial_positions_df: pd.DataFrame
+    temporal_positions_df: pd.DataFrame
     # Result Logger
     result_logger: ResultLogger
     # Samplers
@@ -105,7 +104,6 @@ class BKTRRegressor:
     spatial_labels: list
     temporal_labels: list
     feature_labels: list
-    spatial_coord: pd.DataFrame
     # Plot Maker
     plot_maker: BKTRBetaPlotMaker | None
 
@@ -170,25 +168,12 @@ class BKTRRegressor:
                 will be exported (if None only iteration data is printed). Defaults to None.
             results_export_suffix (str | None, optional): Suffix added at the end of the csv
                 file name (if None, no suffix is added). Defaults to None.
-
-        Raises:
-            ValueError: If `y` index is different than `covariates_df` location index
-            ValueError: If `y` columns are different than `covariates_df` time index
         """
-        self._verify_input_labels(
-            data_df,
-            spatial_positions_df,
-            temporal_positions_df,
-        )
+        self._verify_input_labels(data_df, spatial_positions_df, temporal_positions_df)
 
         # Sort all df indexes
-        for df in [
-            data_df,
-            spatial_positions_df,
-            temporal_positions_df,
-        ]:
-            if df is not None:
-                df.sort_index(inplace=True)
+        for df in [data_df, spatial_positions_df, temporal_positions_df]:
+            df.sort_index(inplace=True)
         self.data_df = data_df
         self.spatial_positions_df = spatial_positions_df
         self.temporal_positions_df = temporal_positions_df
@@ -204,8 +189,6 @@ class BKTRRegressor:
             y_df.index.get_level_values(self.temporal_index_name).unique().to_list()
         )
         self.feature_labels = x_df.columns.to_list()
-        if spatial_positions_df is not None:
-            self.spatial_coord = spatial_positions_df.copy()
         # Tensor assignation
         y_arr = y_df.to_numpy().reshape(len(self.spatial_labels), len(self.temporal_labels))
         self.omega = TSR.tensor(1 - np.isnan(y_arr))
@@ -495,8 +478,6 @@ class BKTRRegressor:
         Args:
             plot_feature_labels (list[str]): List of feature labels to plot.
             temporal_point_label (str): Temporal point label to plot.
-            geo_coordinates (pd.DataFrame): Geo coordinates dataframe. If None, the coordinates
-                are deemed to be passed through the regressor `x_spatial_df`. Defaults to None.
             nb_cols (int, optional): Number of columns in the plot. Defaults to 1.
             mapbox_zoom (int, optional): Mapbox zoom. Defaults to 9.
             use_dark_mode (bool, optional): Whether to use dark mode. Defaults to True.
@@ -616,7 +597,7 @@ class BKTRRegressor:
         """Verify if kernel inputs are valid and align with covariates labels.
 
         Args:
-            kernel_positions (pd.DataFrame): Kernel x to be provided to a kernel.
+            kernel_positions (pd.DataFrame): Kernel position vector to be provided (math:`x`).
             expected_labels (set): List of spatial/temporal labels used in covariates.
             kernel_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;]): Type of kernel.
 
