@@ -8,7 +8,6 @@ EARTH_RADIUS_KM = 6371.2
 
 
 class DIST_TYPE(Enum):
-    LINEAR = 'linear'
     EUCLIDEAN = 'euclidean'
     HAVERSINE = 'haversine'
     DOT_PRODUCT = 'dot product'
@@ -21,8 +20,6 @@ class DistanceCalculator:
         match distance_type:
             case DIST_TYPE.NONE:
                 return cls.calc_none_dist(x, x)
-            case DIST_TYPE.LINEAR:
-                return cls.calc_linear_dist(x, x)
             case DIST_TYPE.EUCLIDEAN:
                 return cls.calc_euclidean_dist(x, x)
             case DIST_TYPE.HAVERSINE:
@@ -52,11 +49,6 @@ class DistanceCalculator:
     def calc_none_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
         cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
         return TSR.eye(x1.shape[0])
-
-    @classmethod
-    def calc_linear_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2, expected_last_dim_shape=1)
-        return (x1 - x2.t()).abs()
 
     @classmethod
     def calc_euclidean_dist(cls, x1: torch.Tensor, x2: torch.Tensor):

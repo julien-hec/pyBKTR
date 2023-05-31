@@ -235,7 +235,7 @@ def simulate_spatiotemporal_data(
     spatial_kernel.distance_type = DIST_TYPE.EUCLIDEAN
     spatial_kernel.set_distance_matrix(spa_pos)
     spatial_covariance = spatial_kernel.kernel_gen()
-    temporal_kernel.distance_type = DIST_TYPE.LINEAR
+    temporal_kernel.distance_type = DIST_TYPE.EUCLIDEAN
     temporal_kernel.set_distance_matrix(temp_pos)
     temporal_covariance = temporal_kernel.kernel_gen()
 
