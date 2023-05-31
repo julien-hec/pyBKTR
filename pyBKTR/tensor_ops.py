@@ -1,6 +1,5 @@
 from typing import Any
 
-import pandas as pd
 import torch
 
 
@@ -83,14 +82,3 @@ class TSR:
     @classmethod
     def arange(cls, start: int, end: int, step: int = 1):
         return torch.arange(start, end, step, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def get_df_tensor_or_none(cls, input_df: pd.DataFrame | None) -> torch.Tensor | None:
-        """Util function to get none if a value is none or a tensor instance of the df.
-
-        Args:
-            input_df (pd.DataFrame | None): Input dataframe
-        """
-        if input_df is None:
-            return None
-        return cls.tensor(input_df.to_numpy())

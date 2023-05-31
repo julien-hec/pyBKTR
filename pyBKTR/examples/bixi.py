@@ -13,16 +13,16 @@ class BixiData:
     departure_df: pd.DataFrame
     weather_df: pd.DataFrame
     station_df: pd.DataFrame
-    spatial_x_df: pd.DataFrame
-    temporal_x_df: pd.DataFrame
+    spatial_positions_df: pd.DataFrame
+    temporal_positions_df: pd.DataFrame
     data_df: pd.DataFrame
 
     def __init__(self):
         self.departure_df = self.get_source_df('bixi_station_departures')
         self.weather_df = self.get_source_df('bixi_montreal_weather')
         self.station_df = self.get_source_df('bixi_station_features')
-        self.spatial_x_df = self.get_source_df('bixi_spatial_locations')
-        self.temporal_x_df = self.get_source_df('bixi_temporal_locations')
+        self.spatial_positions_df = self.get_source_df('bixi_spatial_locations')
+        self.temporal_positions_df = self.get_source_df('bixi_temporal_locations')
         self.data_df = reshape_covariate_dfs(
             spatial_df=self.station_df,
             temporal_df=self.weather_df,
@@ -60,18 +60,15 @@ def run_bixi_bktr(
 
     for _ in range(run_id_from, run_id_to + 1):
         bktr_regressor = BKTRRegressor(
-            covariates_df=bixi_data.covariates_df,
+            data_df=bixi_data.data_df,
             y_df=bixi_data.departure_df,
             rank_decomp=10,
             burn_in_iter=burn_in_iter,
             sampling_iter=sampling_iter,
             spatial_kernel=spatial_kernel,
-            spatial_x_df=bixi_data.spatial_x_df,
+            spatial_positions_df=bixi_data.spatial_positions_df,
             temporal_kernel=temporal_kernel,
-            temporal_x_df=bixi_data.temporal_x_df,
-            results_export_dir=results_export_dir,
-            sampled_beta_indexes=[230, 450],
-            sampled_y_indexes=[100, 325],
+            temporal_positions_df=bixi_data.temporal_positions_df,
         )
 
         bktr_regressor.mcmc_sampling()
