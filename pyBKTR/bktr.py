@@ -82,7 +82,7 @@ class BKTRRegressor:
     temporal_positions_df: pd.DataFrame
     # Result Logger
     result_logger: ResultLogger
-    has_completed_sampling: bool
+    has_completed_sampling: bool = False
     # Samplers
     spatial_params_sampler: KernelParamSampler
     temporal_params_sampler: KernelParamSampler
@@ -344,13 +344,13 @@ class BKTRRegressor:
             str: A summary of the MCMC regressor results containing information about the
                 MCMC sampling process and the estimated model's parameters.
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Summary can only be accessed after MCMC sampling.')
         return self.result_logger.summary()
 
     @property
     def beta_covariates_summary_df(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError(
                 'Covariate summary dataframe can only be accessed after MCMC sampling.'
             )
@@ -358,7 +358,7 @@ class BKTRRegressor:
 
     @property
     def y_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Y estimates can only be accessed after MCMC sampling.')
         y_est = self.result_logger.y_estimates_df.copy()
         y_est.iloc[:, 0].mask(self.omega.flatten().cpu() == 0, inplace=True)
@@ -366,13 +366,13 @@ class BKTRRegressor:
 
     @property
     def imputed_y_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Imputed Y estimates can only be accessed after MCMC sampling.')
         return self.result_logger.y_estimates_df
 
     @property
     def beta_estimates(self) -> pd.DataFrame:
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta estimates can only be accessed after MCMC sampling.')
         return self.result_logger.beta_estimates_df
 
@@ -391,7 +391,7 @@ class BKTRRegressor:
         Returns:
             list[float]: The sampled betas through iteration for the given labels
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
         beta_per_iter_tensor = self.result_logger.get_iteration_betas_tensor(
             [spatial_label], [temporal_label], [feature_label]
@@ -419,7 +419,7 @@ class BKTRRegressor:
         Returns:
             pd.DataFrame: A dataframe with the summary for the given labels.
         """
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Beta values can only be accessed after MCMC sampling.')
         return self.result_logger.get_beta_summary_df(
             spatial_labels, temporal_labels, feature_labels
@@ -427,7 +427,7 @@ class BKTRRegressor:
 
     @property
     def hyperparameters_per_iter_df(self):
-        if self.result_logger is None:
+        if not self.has_completed_sampling:
             raise RuntimeError('Hyperparameters can only be accessed after MCMC sampling.')
         return self.result_logger.hyperparameters_per_iter_df
 
