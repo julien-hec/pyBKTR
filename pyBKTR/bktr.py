@@ -57,8 +57,6 @@ class BKTRRegressor:
         'max_iter',
         'a_0',
         'b_0',
-        'results_export_dir',
-        'results_export_suffix',
         'formula',
         'spatial_labels',
         'temporal_labels',
@@ -98,8 +96,6 @@ class BKTRRegressor:
     max_iter: int
     a_0: float
     b_0: float
-    # Export Params
-    results_export_dir: str | None
     # Labels
     spatial_labels: list
     temporal_labels: list
@@ -123,8 +119,6 @@ class BKTRRegressor:
         sigma_r: float = 1e-2,
         a_0: float = 1e-6,
         b_0: float = 1e-6,
-        results_export_dir: str | None = None,
-        results_export_suffix: str | None = None,
     ):
         """Create a new *BKTRRegressor* object.
 
@@ -162,10 +156,6 @@ class BKTRRegressor:
                 function generating tau. Defaults to 1e-6.
             b_0 (float, optional): Initial value for the rate (:math:`\\beta`) in the gamma
                 function generating tau. Defaults to 1e-6.
-            results_export_dir (str | None, optional): Path of the folder where the csv file
-                will be exported (if None only iteration data is printed). Defaults to None.
-            results_export_suffix (str | None, optional): Suffix added at the end of the csv
-                file name (if None, no suffix is added). Defaults to None.
         """
         self.has_completed_sampling = False
         self._verify_input_labels(data_df, spatial_positions_df, temporal_positions_df)
@@ -202,8 +192,6 @@ class BKTRRegressor:
         self.max_iter = self.burn_in_iter + self.sampling_iter
         self.a_0 = a_0
         self.b_0 = b_0
-        self.results_export_dir = results_export_dir
-        self.results_export_suffix = results_export_suffix
 
         # Reshape covariates
         self._reshape_covariates(covariates, len(self.spatial_labels), len(self.temporal_labels))
@@ -571,8 +559,6 @@ class BKTRRegressor:
             feature_labels=self.feature_labels,
             spatial_kernel=self.spatial_kernel,
             temporal_kernel=self.temporal_kernel,
-            results_export_dir=self.results_export_dir,
-            results_export_suffix=self.results_export_suffix,
         )
 
     def _create_likelihood_evaluators(self):
