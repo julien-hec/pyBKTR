@@ -8,16 +8,16 @@ import torch
 from formulaic import Formula, model_matrix
 from formulaic.errors import FormulaicError
 
-from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
-from pyBKTR.likelihood_evaluator import MarginalLikelihoodEvaluator
-from pyBKTR.result_logger import ResultLogger
-from pyBKTR.samplers import (
+from pyBKTR._likelihood_evaluator import MarginalLikelihoodEvaluator
+from pyBKTR._result_logger import ResultLogger
+from pyBKTR._samplers import (
     KernelParamSampler,
     PrecisionMatrixSampler,
     TauSampler,
     get_cov_decomp_chol,
     sample_norm_multivariate,
 )
+from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.tensor_ops import TSR
 
 

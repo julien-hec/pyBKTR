@@ -14,6 +14,13 @@ class DIST_TYPE(Enum):
 
 
 class DistanceCalculator:
+    """
+    Class to compute distances between points of two vectors
+    according to a given distance type.
+
+    :meta private:
+    """
+
     @classmethod
     def get_matrix(cls, x: torch.Tensor, distance_type: DIST_TYPE, earth_radius=EARTH_RADIUS_KM):
         match distance_type:

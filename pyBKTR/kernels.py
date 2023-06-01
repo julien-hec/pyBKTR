@@ -76,6 +76,8 @@ class KernelParameter:
 class Kernel(abc.ABC):
     """
     Abstract Class Template for kernels
+
+    :meta private:
     """
 
     kernel_variance: float
@@ -289,11 +291,21 @@ class KernelMatern(Kernel):
 
 
 class CompositionOps(Enum):
+    """Type of arithmetic operation to be performed to compose a kernel
+
+    :meta private:
+    """
+
     MUL = 'mul'
     ADD = 'add'
 
 
 class KernelComposed(Kernel):
+    """
+    Kernel composed of two kernels and created when two kernels are
+    added or multiplied.
+    """
+
     _name: str = ''
     parameters: list = []
     left_kernel = Kernel

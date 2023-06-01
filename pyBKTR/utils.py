@@ -12,60 +12,6 @@ if TYPE_CHECKING:
     from pyBKTR.kernels import Kernel
 
 
-class log(float):
-    """Log wrapper for math.log to get better documentation"""
-
-    def __new__(cls, log_val, *args, **kwargs):
-        return super(log, cls).__new__(cls, math.log(log_val))
-
-    def __repr__(cls):
-        return f'Log({round(math.exp(cls), 10)})'
-
-
-def get_label_index_or_raise(
-    label: Any, label_list: list[Any], label_type: Literal['spatial', 'temporal', 'feature']
-) -> int:
-    """Get the index of a label in a list of labels. If the label is not in the list,
-    raise an error.
-
-    Args:
-        label (Any): The label for which we want to get the index
-        label_list (List[Any]): The list of labels
-        label_type (Literal['spatial', 'temporal', 'feature']): The label type
-
-    Returns:
-        int: The index of the label in the list
-    """
-    try:
-        return label_list.index(label)
-    except ValueError:
-        raise ValueError(f'Label `{label}` does not exist in {label_type} labels.')
-
-
-def get_label_indexes(
-    labels: list[Any],
-    available_labels: list[Any],
-    label_type: Literal['spatial', 'temporal', 'feature'],
-) -> list[int]:
-    """return the indexes of a given set of labels that can be found in a list of available labels
-
-    Args:
-        labels (list[Any]): The labels for which we want to get the indexes
-        available_labels (list[Any]): The list of available labels
-        label_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;, &#39;feature&#39;]): Type
-            of label for which we want to get indexes
-
-    Raises:
-        ValueError: Error if the list of labels is empty
-
-    Returns:
-        list[int]: The indexes of the labels in the list of available labels
-    """
-    if len(labels) == 0:
-        raise ValueError(f'No {label_type} labels provided.')
-    return [get_label_index_or_raise(lab, available_labels, label_type) for lab in labels]
-
-
 def reshape_covariate_dfs(
     spatial_df: pd.DataFrame,
     temporal_df: pd.DataFrame,
@@ -133,23 +79,6 @@ def reshape_covariate_dfs(
     return data_df
 
 
-def get_dim_labels(dim_prefix: str, max_value: int) -> str:
-    """Utility function to get the dimension labels for a
-        given dimension prefix and max value.
-        TODO: Do not export
-
-    Args:
-        dim_prefix (str): The prefix of the dimension labels
-        max_value (int): The maximum value of the dimension labels
-
-    Returns:
-        str: The dimension labels
-    """
-    max_digits = len(str(max_value))
-    int_format = f'{{:0{max_digits}d}}'
-    return [f'{dim_prefix}_{int_format.format(i)}' for i in range(max_value)]
-
-
 def simulate_spatiotemporal_data(
     nb_locations: int,
     nb_time_points: int,
@@ -190,11 +119,11 @@ def simulate_spatiotemporal_data(
     temp_pos = temp_pos.reshape([nb_time_points, 1])
 
     # Dimension labels
-    s_dims = get_dim_labels('s_dim', nb_spatial_dimensions)
-    s_locs = get_dim_labels('s_loc', nb_locations)
-    t_points = get_dim_labels('t_point', nb_time_points)
-    s_covs = get_dim_labels('s_cov', len(spatial_covariates_means))
-    t_covs = get_dim_labels('t_cov', len(temporal_covariates_means))
+    s_dims = _get_dim_labels('s_dim', nb_spatial_dimensions)
+    s_locs = _get_dim_labels('s_loc', nb_locations)
+    t_points = _get_dim_labels('t_point', nb_time_points)
+    s_covs = _get_dim_labels('s_cov', len(spatial_covariates_means))
+    t_covs = _get_dim_labels('t_cov', len(temporal_covariates_means))
 
     spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=pd.Index(s_locs, name='location'))
     temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=pd.Index(t_points, name='time'))
@@ -264,3 +193,55 @@ def simulate_spatiotemporal_data(
         'temporal_positions_df': temp_pos_df,
         'beta_df': beta_df,
     }
+
+
+def _get_dim_labels(dim_prefix: str, max_value: int) -> str:
+    """Utility function to get the dimension labels for a
+        given dimension prefix and max value.
+
+    Args:
+        dim_prefix (str): The prefix of the dimension labels
+        max_value (int): The maximum value of the dimension labels
+
+    Returns:
+        str: The dimension labels
+    """
+    max_digits = len(str(max_value))
+    int_format = f'{{:0{max_digits}d}}'
+    return [f'{dim_prefix}_{int_format.format(i)}' for i in range(max_value)]
+
+
+def get_label_index_or_raise(
+    label: Any, label_list: list[Any], label_type: Literal['spatial', 'temporal', 'feature']
+) -> int:
+    """Get the index of a label in a list of labels. If the label is not in the list,
+    raise an error.
+
+    Args:
+        label (Any): The label for which we want to get the index
+        label_list (List[Any]): The list of labels
+        label_type (Literal['spatial', 'temporal', 'feature']): The label type
+
+    Returns:
+        int: The index of the label in the list
+
+    :meta private:
+    """
+    try:
+        return label_list.index(label)
+    except ValueError:
+        raise ValueError(f'Label `{label}` does not exist in {label_type} labels.')
+
+
+class log(float):
+    """
+    Log wrapper for math.log to get better documentation
+
+    :meta private:
+    """
+
+    def __new__(cls, log_val, *args, **kwargs):
+        return super(log, cls).__new__(cls, math.log(log_val))
+
+    def __repr__(cls):
+        return f'Log({round(math.exp(cls), 10)})'

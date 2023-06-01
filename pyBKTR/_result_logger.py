@@ -9,7 +9,7 @@ from formulaic import Formula
 
 from pyBKTR.kernels import Kernel, KernelComposed
 from pyBKTR.tensor_ops import TSR
-from pyBKTR.utils import get_label_indexes
+from pyBKTR.utils import get_label_index_or_raise
 
 
 class ResultLogger:
@@ -313,9 +313,9 @@ class ResultLogger:
     def get_iteration_betas_tensor(
         self, spatial_labels: list[Any], temporal_labels: list[Any], feature_labels: list[Any]
     ) -> torch.Tensor:
-        spatial_indexes = get_label_indexes(spatial_labels, self.spatial_labels, 'spatial')
-        temporal_indexes = get_label_indexes(temporal_labels, self.temporal_labels, 'temporal')
-        feature_indexes = get_label_indexes(feature_labels, self.feature_labels, 'feature')
+        spatial_indexes = _get_label_indexes(spatial_labels, self.spatial_labels, 'spatial')
+        temporal_indexes = _get_label_indexes(temporal_labels, self.temporal_labels, 'temporal')
+        feature_indexes = _get_label_indexes(feature_labels, self.feature_labels, 'feature')
         betas_per_iterations = torch.einsum(
             'sri,tri,cri->stci',
             [
@@ -438,3 +438,27 @@ class ResultLogger:
             beta_distrib_str,
         ]
         return '\n'.join(beta_summary_str)
+
+
+def _get_label_indexes(
+    labels: list[Any],
+    available_labels: list[Any],
+    label_type: Literal['spatial', 'temporal', 'feature'],
+) -> list[int]:
+    """return the indexes of a given set of labels that can be found in a list of available labels
+
+    Args:
+        labels (list[Any]): The labels for which we want to get the indexes
+        available_labels (list[Any]): The list of available labels
+        label_type (Literal[&#39;spatial&#39;, &#39;temporal&#39;, &#39;feature&#39;]): Type
+            of label for which we want to get indexes
+
+    Raises:
+        ValueError: Error if the list of labels is empty
+
+    Returns:
+        list[int]: The indexes of the labels in the list of available labels
+    """
+    if len(labels) == 0:
+        raise ValueError(f'No {label_type} labels provided.')
+    return [get_label_index_or_raise(lab, available_labels, label_type) for lab in labels]
