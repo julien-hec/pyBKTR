@@ -1,7 +1,5 @@
 import textwrap
 from collections import defaultdict
-from datetime import datetime
-from pathlib import Path
 from time import time
 from typing import Any, Literal
 
@@ -44,8 +42,6 @@ class ResultLogger:
         'beta_covariates_summary_df',
         'hyperparameters_per_iter_df',
         'last_time_stamp',
-        'export_path',
-        'export_suffix',
         'error_metrics',
         'total_sq_error',
     ]
@@ -92,25 +88,9 @@ class ResultLogger:
         feature_labels: list,
         spatial_kernel: Kernel,
         temporal_kernel: Kernel,
-        results_export_dir: str | None = None,
-        results_export_suffix: str | None = None,
     ):
         # Create a tensor dictionary holding scalar data gathered through all iterations
         self.logged_params_map = defaultdict(list)
-
-        # Set export dir
-        if results_export_dir is None and results_export_suffix is not None:
-            raise ValueError(
-                'Cannot set a suffix for the export file if no export directory is provided.'
-            )
-        elif results_export_dir is None:
-            self.export_path = None
-        else:
-            export_path = Path(results_export_dir)
-            if not export_path.is_dir():
-                raise ValueError(f'Path {export_path} does not exists.')
-            self.export_path = export_path
-        self.export_suffix = results_export_suffix
 
         # Create tensors that accumulate values needed for estimates
         self.spatial_labels = spatial_labels
@@ -234,14 +214,6 @@ class ResultLogger:
         formated_results = [f'{k.replace("_", " ")} is {v:7.4f}' for k, v in result_dict.items()]
         print(f'** Result for iter {iter:<5} : {" || ".join(formated_results)} **')
 
-    def _get_file_name(self, export_type_name: str):
-        time_now = datetime.now()
-        name_components = [export_type_name, time_now.strftime('%Y%m%d_%H%M')]
-        if self.export_suffix:
-            name_components.append(self.export_suffix)
-        file_name = '_'.join(name_components)
-        return self.export_path.joinpath(f'{file_name}.csv')
-
     def log_final_iter_results(self):
         self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
         self.y_estimates = self.sum_y_est / self.nb_sampling_iter
@@ -274,9 +246,6 @@ class ResultLogger:
         error_metrics = self._set_error_metrics()
         iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics
         self._print_iter_result('TOTAL', iters_summary_dict)
-        iter_results_df = pd.DataFrame.from_dict(self.logged_params_map)
-        if self.export_path is not None:
-            iter_results_df.to_csv(self._get_file_name('iter_results'), index=False)
 
     @classmethod
     def _create_distrib_values_summary(cls, values: torch.Tensor, dim: int = None) -> torch.Tensor:
