@@ -1,4 +1,5 @@
 import math
+import warnings
 from typing import Callable
 
 import numpy as np
@@ -156,12 +157,10 @@ class PrecisionMatrixSampler:
 
     def sample(self, covs_decomp: torch.Tensor):
         w = covs_decomp.matmul(covs_decomp.t()) + TSR.eye(self.nb_covariates)
-        # TODO check if we can use cov instead of precision #14
-        w_inv = w.inverse()
-        wish_sigma = (w_inv + w_inv.t()) * 0.5
-        wish_sigma += TSR.eye(self.nb_covariates) * TSR.default_jitter
-        wish_precision_matrix = torch.distributions.Wishart(
-            df=self.wish_df, covariance_matrix=wish_sigma
-        ).sample()
-        self.wish_precision_tensor = wish_precision_matrix
+        # Warning of singular sample omitted since it is resampled anyway in the torch module
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            self.wish_precision_tensor = torch.distributions.Wishart(
+                df=self.wish_df, precision_matrix=w
+            ).sample()
         return self.wish_precision_tensor
