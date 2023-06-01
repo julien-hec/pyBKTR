@@ -133,7 +133,7 @@ class ResultLogger:
         Collect current iteration values inside the historical data tensor list.
         To be noted that errors have already been calculated before tau sampling.
         """
-        elapsed_time_dict = self._get_elapsed_time_dict()
+        elapsed_time = self._get_elapsed_time()
 
         if iter > self.nb_burn_in_iter:
             self.sum_beta_est += self.beta_estimates
@@ -155,26 +155,22 @@ class ResultLogger:
             **{'iter': iter},
             **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
             **self.error_metrics,
-            **elapsed_time_dict,
+            **{'elapsed_time': elapsed_time},
         }
 
         for k, v in total_logged_params.items():
             self.logged_params_map[k].append(v)
 
-        self._print_iter_result(iter, {**elapsed_time_dict, **self.error_metrics})
+        self._print_iter_result(iter, elapsed_time)
 
-    def _get_elapsed_time_dict(self):
+    def _get_elapsed_time(self):
         iter_elapsed_time = time() - self.last_time_stamp
         self.total_elapsed_time += iter_elapsed_time
         self.last_time_stamp = time()
-        return {'Elapsed Time': iter_elapsed_time}
+        return iter_elapsed_time
 
-    def _set_error_metrics(self) -> dict[str, float]:
-        """Calculate error metrics of interest (MAE, RMSE, Total Error)
-
-        Returns:
-            dict[str, float]: A dictionary containing the values of the error metrics
-        """
+    def _set_error_metrics(self):
+        """Calculate error metrics of interest (MAE, RMSE, Total Error)"""
         nb_observ = self.omega.sum()
         err_matrix = (self.y_estimates - self.y) * self.omega
         total_sq_error = err_matrix.norm() ** 2
@@ -185,7 +181,6 @@ class ResultLogger:
             'MAE': float(mae),
             'RMSE': float(rmse),
         }
-        return self.error_metrics
 
     def set_y_and_beta_estimates(self, decomp_tensors_map: dict[str, torch.Tensor], iter: int):
         """Calculate the estimated y and beta tensors
@@ -210,9 +205,14 @@ class ResultLogger:
         )
         self.y_estimates = torch.einsum('ijk,ijk->ij', self.covariates, self.beta_estimates)
 
-    def _print_iter_result(self, iter: int, result_dict: dict[str, float]):
-        formated_results = [f'{k.replace("_", " ")} is {v:7.4f}' for k, v in result_dict.items()]
-        print(f'** Result for iter {iter:<5} : {" || ".join(formated_results)} **')
+    def _print_iter_result(self, iter: int | str, elapsed_time: float):
+        formatted_errors = [f'{k} {v:7.4f}' for k, v in self.error_metrics.items()]
+        result_items = [
+            f'Iter {iter:<5}',
+            f'Elapsed {elapsed_time:8.2f}s',
+            *formatted_errors,
+        ]
+        print(f'* {" | ".join(result_items)} *')
 
     def log_final_iter_results(self):
         self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
@@ -243,9 +243,8 @@ class ResultLogger:
             columns=self.hparam_labels,
             index=pd.Index(range(1, self.nb_sampling_iter + 1), name='Sampling Iter'),
         )
-        error_metrics = self._set_error_metrics()
-        iters_summary_dict = {'Elapsed Time': self.total_elapsed_time} | error_metrics
-        self._print_iter_result('TOTAL', iters_summary_dict)
+        self._set_error_metrics()
+        self._print_iter_result('TOTAL', self.total_elapsed_time)
 
     @classmethod
     def _create_distrib_values_summary(cls, values: torch.Tensor, dim: int = None) -> torch.Tensor:
