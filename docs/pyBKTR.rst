@@ -37,34 +37,10 @@ pyBKTR.kernels module
    :undoc-members:
    :show-inheritance:
 
-pyBKTR.likelihood\_evaluator module
------------------------------------
-
-.. automodule:: pyBKTR.likelihood_evaluator
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pyBKTR.plots module
 -------------------
 
 .. automodule:: pyBKTR.plots
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pyBKTR.result\_logger module
-----------------------------
-
-.. automodule:: pyBKTR.result_logger
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-pyBKTR.samplers module
-----------------------
-
-.. automodule:: pyBKTR.samplers
    :members:
    :undoc-members:
    :show-inheritance:
