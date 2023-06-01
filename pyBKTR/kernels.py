@@ -65,7 +65,7 @@ class KernelParameter:
     def __repr__(self):
         rep_attrs = [f'val={self.value}']
         if self.is_fixed:
-            rep_attrs.append('is_const=True')
+            rep_attrs.append('is_fixed=True')
         if self.lower_bound != DEFAULT_LBOUND:
             rep_attrs.append(f'lbound={self.lower_bound}')
         if self.upper_bound != DEFAULT_UBOUND:

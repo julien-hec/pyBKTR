@@ -20,11 +20,16 @@ df.index = (
     .to_list()
 )
 df = df.drop(columns=date_columns)
-df.index.name = 'date'
+df.index.name = 'time'
 df = df[1:197]
-# Min Max scaling (0 - 1)
-df = (df - df.min()) / (df.max() - df.min())
-df.to_csv(f'{EXPORT_PATH}/bixi_montreal_weather.csv')
+df = df.rename(
+    columns={
+        'Mean Temp (°C)': 'mean_temp_c',
+        'Total Precip (mm)': 'total_precip_mm',
+        'max_temp': 'max_temp_f',
+    }
+)
+df.to_csv(f'{EXPORT_PATH}/bixi_temporal_features.csv')
 
 # Temporal Locations
 df['time_index'] = range(0, len(df))
@@ -35,12 +40,10 @@ df.to_csv(f'{EXPORT_PATH}/bixi_temporal_locations.csv')
 # Spatial features
 df = pd.read_csv(get_source_file_name('bike_station_features'))
 df.index = df['Code'].astype('str') + ' - ' + df['name']
-df.index.name = 'station'
+df.index.name = 'location'
 s_df = df
 df = df[df.columns[8:21]]
-# Min Max scaling (0 - 1)
-df = (df - df.min()) / (df.max() - df.min())
-df.to_csv(f'{EXPORT_PATH}/bixi_station_features.csv')
+df.to_csv(f'{EXPORT_PATH}/bixi_spatial_features.csv')
 
 # Spatial Locations
 df = s_df[['latitude', 'longitude']]
@@ -63,8 +66,12 @@ df = df.transpose()
 q_90 = np.quantile(df.to_numpy(na_value=0), 0.9)
 df = df.applymap(lambda x: np.NaN if x > q_90 else x)
 df[['2019-05-26', '2019-08-25', '2019-09-27']] = np.NaN
-max_val = np.max(df.to_numpy(na_value=0))
-df = df / max_val
 df.index = station_names
-df.index.name = 'station'
+df.index.name = 'location'
 df.to_csv(f'{EXPORT_PATH}/bixi_station_departures.csv')
+
+# # Min Max scaling (0 - 1)
+# df = (df - df.min()) / (df.max() - df.min())
+
+# max_val = np.max(df.to_numpy(na_value=0))
+# df = df / max_val
