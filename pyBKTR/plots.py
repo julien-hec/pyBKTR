@@ -83,7 +83,7 @@ def plot_temporal_betas(
 
     fig = go.Figure(scatters)
     fig.update_layout(
-        yaxis_title='Value of coefficients',
+        yaxis_title='Beta Value',
         title=f'Location: {spatial_point_label.title()}',
         hovermode='x',
         width=fig_width,
@@ -278,7 +278,7 @@ def plot_covariates_beta_dists(
 
     Args:
         bktr_reg (BKTRRegressor): BKTRRegressor object.
-        feature_labels (list[Any] | None, optional): List of feature labels labels for
+        feature_labels (list[Any] | None, optional): List of feature labels for
             which to plot the beta estimates distribution. If None plot for all features.
         show_figure (bool, optional): Whether to show the figure. Defaults to True.
         fig_width (int, optional): Figure width. Defaults to 900.
@@ -377,7 +377,7 @@ def plot_hyperparams_traceplot(
     fig_width: int = 800,
     fig_height: int = 550,
 ):
-    """Plot the distribution of hyperparameters through iterations.
+    """Plot the evolution of hyperparameters through iterations. (Traceplot)
 
     Args:
         hyperparameters (list[str] | None, optional): List of hyperparameters to plot.

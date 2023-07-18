@@ -25,15 +25,17 @@ class KernelParameter:
     is_fixed: bool = False
     """Says if the kernel parameter is fixed or not (if it is fixed, there is no sampling)"""
     lower_bound: float = DEFAULT_LBOUND
-    """The hyperparameter's minimal admissible value in sampling (Paper -- :math:`\\phi_{min}`)"""
+    """Hyperparameter's minimal value during sampling (Paper -- :math:`\\phi_{min}`)"""
     upper_bound: float = DEFAULT_UBOUND
-    """The hyperparameter's maximal admissible value in sampling (Paper -- :math:`\\phi_{max}`)"""
+    """Hyperparameter's maximal value during sampling (Paper -- :math:`\\phi_{max}`)"""
     slice_sampling_scale: float
     """The sampling range's amplitude (Paper -- :math:`\\rho`)"""
     hparam_precision: float
     """WHAT IS THAT? TODO"""
     kernel: Kernel | None
     """The kernel associated with the parameter (it is set at kernel instanciation)"""
+    name: str
+    """The parameter's name"""
 
     def __init__(
         self,
@@ -174,7 +176,7 @@ class KernelSE(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2)),
+        lengthscale: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
@@ -197,8 +199,8 @@ class KernelRQ(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2)),
-        alpha: KernelParameter = KernelParameter(log(2)),
+        lengthscale: KernelParameter = KernelParameter(2),
+        alpha: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
@@ -225,8 +227,8 @@ class KernelPeriodic(Kernel):
 
     def __init__(
         self,
-        lengthscale: KernelParameter = KernelParameter(log(2)),
-        period_length: KernelParameter = KernelParameter(log(2)),
+        lengthscale: KernelParameter = KernelParameter(2),
+        period_length: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
@@ -248,11 +250,12 @@ class KernelPeriodic(Kernel):
 class KernelMatern(Kernel):
     lengthscale: KernelParameter
     smoothness_factor: Literal[1, 3, 5]
+    _name: str = 'Matern Kernel'
 
     def __init__(
         self,
         smoothness_factor: Literal[1, 3, 5],
-        lengthscale: KernelParameter = KernelParameter(log(2)),
+        lengthscale: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
         distance_type: type[DIST_TYPE] = DIST_TYPE.HAVERSINE,
         jitter_value: float | None = None,
@@ -260,13 +263,10 @@ class KernelMatern(Kernel):
         if smoothness_factor not in {1, 3, 5}:
             raise ValueError('smoothness factor should be one of the following values 1, 3 or 5')
         super().__init__(kernel_variance, distance_type, jitter_value)
+        self._name = f'Matern {smoothness_factor}/2 Kernel'
         self.smoothness_factor = smoothness_factor
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self, 'lengthscale')
-
-    @property
-    def _name(self) -> str:
-        return f'Matern {self.smoothness_factor}/2 Kernel'
 
     @cached_property
     def smoothness_kernel_fn(self) -> Callable:

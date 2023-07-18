@@ -42,7 +42,6 @@ class KernelParamSampler:
     def _prior_fn(self, param: KernelParameter) -> float:
         """
         Prior likelihood function for a given hyperparameter value
-        TODO Check if we should always use the same hyper mu prior from the config?
         """
         # return -0.5 * self.config.hypr_precision_prior * (theta - self.config.hypr_mu_prior) ** 2
         return -0.5 * param.hparam_precision * (math.log(param.value)) ** 2

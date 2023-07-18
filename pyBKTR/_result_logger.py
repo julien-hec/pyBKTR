@@ -62,7 +62,6 @@ class ResultLogger:
     # Summary parameters
     LINE_NCHAR = 70
     TAB_STR = '  '
-    LINE_SEPARATOR = LINE_NCHAR * '='
     COL_WIDTH = 18
     DF_DISTRIB_STR_PARAMS = {
         'float_format': '{:,.3f}'.format,
@@ -152,10 +151,12 @@ class ResultLogger:
             )
 
         total_logged_params = {
-            **{'iter': iter},
-            **{'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0},
+            **{
+                'iter': iter,
+                'is_burn_in': 1 if iter <= self.nb_burn_in_iter else 0,
+                'elapsed_time': elapsed_time,
+            },
             **self.error_metrics,
-            **{'elapsed_time': elapsed_time},
         }
 
         for k, v in total_logged_params.items():
@@ -169,17 +170,17 @@ class ResultLogger:
         self.last_time_stamp = time()
         return iter_elapsed_time
 
-    def _set_error_metrics(self):
+    def set_error_metrics(self):
         """Calculate error metrics of interest (MAE, RMSE, Total Error)"""
         nb_observ = self.omega.sum()
         err_matrix = (self.y_estimates - self.y) * self.omega
         total_sq_error = err_matrix.norm() ** 2
         mae = err_matrix.abs().sum() / nb_observ
         rmse = (total_sq_error / nb_observ).sqrt()
-        self.total_sq_error = float(total_sq_error)
+        self.total_sq_error = float(total_sq_error.cpu())
         self.error_metrics = {
-            'MAE': float(mae),
-            'RMSE': float(rmse),
+            'MAE': float(mae.cpu()),
+            'RMSE': float(rmse.cpu()),
         }
 
     def set_y_and_beta_estimates(self, decomp_tensors_map: dict[str, torch.Tensor], iter: int):
@@ -188,6 +189,7 @@ class ResultLogger:
         Args:
             decomposition_tensors_map (dict[str, torch.Tensor]): A dictionnary that
                 contains all the spatial, temporal and covariates decomposition
+            iter (int): The current iteration number.
         """
         if iter > self.nb_burn_in_iter:
             iter_indx = iter - self.nb_burn_in_iter - 1
@@ -222,7 +224,7 @@ class ResultLogger:
         )
         self.beta_covariates_summary_df = pd.DataFrame(
             beta_covariates_summary.t(),
-            index=self.feature_labels,
+            index=pd.Index(self.feature_labels, name='feature'),
             columns=self.moment_metrics + self.quantile_metrics,
         )
         y_beta_index = pd.MultiIndex.from_product(
@@ -243,7 +245,7 @@ class ResultLogger:
             columns=self.hparam_labels,
             index=pd.Index(range(1, self.nb_sampling_iter + 1), name='Sampling Iter'),
         )
-        self._set_error_metrics()
+        self.set_error_metrics()
         self._print_iter_result('TOTAL', self.total_elapsed_time)
 
     @classmethod
@@ -253,7 +255,7 @@ class ResultLogger:
 
         Args:
             values (torch.Tensor): Values to summarize
-            dim (int, optional): Dimension of the tensor we want to summaryize. If None,
+            dim (int, optional): Dimension of the tensor we want to summarize. If None,
                 we want to summarize the whole tensor and flatten it. Defaults to None.
 
         Returns:
@@ -332,12 +334,13 @@ class ResultLogger:
         Returns:
             str: A string representation of the BKTR regressor after MCMC sampling.
         """
+        line_sep = self.LINE_NCHAR * '='
         title_format = f'^{self.LINE_NCHAR}'
         summary_str = [
             '',
-            self.LINE_SEPARATOR,
+            line_sep,
             f'{"BKTR Regressor Summary":{title_format}}',
-            self.LINE_SEPARATOR,
+            line_sep,
             self._get_formula_str(),
             '',
             f'Burn-in iterations: {self.nb_burn_in_iter}',
@@ -346,20 +349,20 @@ class ResultLogger:
             f'Nb Spatial Locations: {len(self.spatial_labels)}',
             f'Nb Temporal Points: {len(self.temporal_labels)}',
             f'Nb Covariates: {len(self.feature_labels)}',
-            self.LINE_SEPARATOR,
+            line_sep,
             'In Sample Errors:',
             f'{self.TAB_STR}RMSE: {self.error_metrics["RMSE"]:.3f}',
             f'{self.TAB_STR}MAE: {self.error_metrics["MAE"]:.3f}',
             f'Computation time: {self.total_elapsed_time:.2f}s.',
-            self.LINE_SEPARATOR,
+            line_sep,
             '-- Spatial Kernel --',
             self._kernel_summary(self.spatial_kernel, 'spatial'),
             '',
             '-- Temporal Kernel --',
             self._kernel_summary(self.temporal_kernel, 'temporal'),
-            self.LINE_SEPARATOR,
+            line_sep,
             self._beta_summary(),
-            self.LINE_SEPARATOR,
+            line_sep,
             '',
         ]
         return '\n'.join(summary_str)

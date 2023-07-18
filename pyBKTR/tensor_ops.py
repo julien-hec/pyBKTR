@@ -19,7 +19,7 @@ class TSR:
             case torch.float64:
                 return 1e-8
             case torch.float32:
-                return 1e-5
+                return 1e-4
             case _:
                 raise ValueError('The dtype used by TSR has no default mapped jitter value')
 
@@ -37,6 +37,38 @@ class TSR:
         if seed is not None:
             torch.manual_seed(seed)
 
+    @classmethod
+    def tensor(cls, tensor_data: Any) -> torch.Tensor:
+        return torch.tensor(tensor_data, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def eye(cls, n: int):
+        return torch.eye(n, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def ones(cls, tsr_dim: int | tuple[int]):
+        return torch.ones(tsr_dim, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def zeros(cls, tsr_dim: int | tuple[int]):
+        return torch.zeros(tsr_dim, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def rand(cls, tsr_dim: int | tuple[int]):
+        return torch.rand(tsr_dim, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def randn(cls, tsr_dim: tuple[int]) -> torch.Tensor:
+        return torch.randn(tsr_dim, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def randn_like(cls, input_tensor: torch.Tensor):
+        return torch.randn_like(input_tensor, dtype=cls.dtype, device=cls.device)
+
+    @classmethod
+    def arange(cls, start: int, end: int, step: int = 1):
+        return torch.arange(start, end, step, dtype=cls.dtype, device=cls.device)
+
     @staticmethod
     def kronecker_prod(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.kron(a, b)
@@ -50,35 +82,3 @@ class TSR:
                 f'khatri rao product, got {a_cols} and {b_cols}'
             )
         return torch.reshape(torch.einsum('ac,bc->abc', [a, b]), [-1, a.shape[1]])
-
-    @classmethod
-    def tensor(cls, tensor_data: Any) -> torch.Tensor:
-        return torch.tensor(tensor_data, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def eye(cls, n: int):
-        return torch.eye(n, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def ones(cls, n: int | tuple[int]):
-        return torch.ones(n, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def zeros(cls, n: int | tuple[int]):
-        return torch.zeros(n, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def rand(cls, size: int | tuple[int]):
-        return torch.rand(size, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def randn(cls, size: tuple[int]) -> torch.Tensor:
-        return torch.randn(size, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def randn_like(cls, input_tensor: torch.Tensor):
-        return torch.randn_like(input_tensor, dtype=cls.dtype, device=cls.device)
-
-    @classmethod
-    def arange(cls, start: int, end: int, step: int = 1):
-        return torch.arange(start, end, step, dtype=cls.dtype, device=cls.device)

@@ -22,7 +22,7 @@ from pyBKTR.tensor_ops import TSR
 
 
 class BKTRRegressor:
-    """Class encapsulating the BKTR regression steps
+    """Class encapsulating the BKTR regression elements
 
     A BKTRRegressor holds all the key elements to accomplish the MCMC sampling
     algorithm (**Algorithm 1** of the paper).
@@ -34,7 +34,6 @@ class BKTRRegressor:
         'omega',
         'covariates',
         'covariates_dim',
-        'logged_params_tensor',
         'tau',
         'spatial_decomp',
         'temporal_decomp',
@@ -67,7 +66,6 @@ class BKTRRegressor:
     omega: torch.Tensor
     covariates: torch.Tensor
     covariates_dim: dict[str, int]
-    logged_params_tensor: dict[str, torch.Tensor]
     tau: float
     # Covariate decompositions (change during iter)
     spatial_decomp: torch.Tensor  # U
@@ -132,11 +130,11 @@ class BKTRRegressor:
                 50 rows (10 x 5). If formula is None, the dataframe should contain
                 the response variable `Y` as the first column. Note that the covariate
                 columns cannot contain NaN values, but the response variable can.
-            formula (str | None, optional): A Wilkinson formula string to specify the
-                response variate `Y` and the covariates to use (compatible with the Formulaic
-                package).  If None, the first column of the data frame will be used as the
-                response variable and all the other columns will be used as the covariates.
-                Defaults to None.
+            formula (str | None, optional): A Wilkinson formula string to specify the relation
+                between the response variable `Y` and the covariates (compatible with the
+                Formulaic package).  If None, the first column of the data frame will be
+                used as the response variable and all the other columns will be used as the
+                covariates.  Defaults to None.
             rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
             burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
             sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
@@ -212,7 +210,7 @@ class BKTRRegressor:
         2. Sample temporal kernel hyperparameters
         3. Sample the precision matrix from a wishart distribution
         4. Sample a new spatial covariate decomposition
-        5. Sample a new covariate decomposition
+        5. Sample a new feature covariate decomposition
         6. Sample a new temporal covariate decomposition
         7. Calculate respective errors for the iterations
         8. Sample a new tau value
@@ -417,7 +415,7 @@ class BKTRRegressor:
     @property
     def hyperparameters_per_iter_df(self):
         if not self.has_completed_sampling:
-            raise RuntimeError('Hyperparameters can only be accessed after MCMC sampling.')
+            raise RuntimeError('Hyperparameters trace can only be accessed after MCMC sampling.')
         return self.result_logger.hyperparameters_per_iter_df
 
     @staticmethod
@@ -437,10 +435,14 @@ class BKTRRegressor:
             ValueError: If kernel_positions size is not appropriate.
         """
         cov_related_indx_name = 'location' if kernel_type == 'spatial' else 'time'
+        if kernel_positions.index.name != cov_related_indx_name:
+            raise ValueError(
+                f'`{kernel_type}_positions_df` must have a `{cov_related_indx_name}` index.'
+            )
         if expected_labels != set(kernel_positions.index):
             raise ValueError(
-                f'`{kernel_type}_positions` must have the same index as the covariates\''
-                f' {cov_related_indx_name} index.'
+                f'`{kernel_type}_positions_df` must contain in its {cov_related_indx_name}',
+                f'index the unique values located in `data_df` {cov_related_indx_name} index.',
             )
 
     @classmethod
@@ -679,12 +681,13 @@ class BKTRRegressor:
     def _set_errors_and_sample_precision_tau(self, iter: int):
         """Sample a new tau and set errors"""
         self.result_logger.set_y_and_beta_estimates(self._decomposition_tensors, iter)
-        self.result_logger._set_error_metrics()
+        self.result_logger.set_error_metrics()
         self.tau = self.tau_sampler.sample(self.result_logger.total_sq_error)
 
     @property
     def _decomposition_tensors(self):
         """Get a dict of current iteration decomposition needed to calculate estimated betas"""
+        # TODO this could be arguments in the result logger
         return {
             'spatial_decomp': self.spatial_decomp,
             'temporal_decomp': self.temporal_decomp,

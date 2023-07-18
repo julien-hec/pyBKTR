@@ -126,7 +126,9 @@ def simulate_spatiotemporal_data(
     t_covs = _get_dim_labels('t_cov', len(temporal_covariates_means))
 
     spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=pd.Index(s_locs, name='location'))
-    temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=pd.Index(t_points, name='time'))
+    temp_pos_df = pd.DataFrame(
+        temp_pos, columns=['time_val'], index=pd.Index(t_points, name='time')
+    )
 
     spa_means = TSR.tensor(spatial_covariates_means)
     nb_spa_covariates = len(spa_means)
@@ -163,12 +165,15 @@ def simulate_spatiotemporal_data(
     chol_spa: torch.Tensor = torch.linalg.cholesky(spatial_covariance)
     chol_temp_covs = torch.linalg.cholesky(
         TSR.kronecker_prod(temporal_covariance, covs_covariance)
+        + 1e-6 * TSR.eye(nb_covs * nb_time_points)
     )
-    beta_values = (
-        chol_spa @ TSR.randn([nb_locations, nb_time_points * nb_covs]) @ chol_temp_covs.T
-    ).reshape([nb_locations, nb_time_points, nb_covs])
+    temp_vals = TSR.randn([nb_locations, nb_time_points * nb_covs])
+    temp_errs = TSR.randn([nb_locations, nb_time_points])
+    beta_values = (chol_spa @ temp_vals @ chol_temp_covs.T).reshape(
+        [nb_locations, nb_time_points, nb_covs]
+    )
     y_val = torch.einsum('ijk,ijk->ij', covs, beta_values)
-    err = TSR.randn([nb_locations, nb_time_points]) * (noise_variance_scale**0.5)
+    err = temp_errs * (noise_variance_scale**0.5)
     y_val += err
     y_val = y_val.reshape([nb_locations * nb_time_points, 1])
     # We remove the intercept from the covariates
@@ -206,7 +211,7 @@ def _get_dim_labels(dim_prefix: str, max_value: int) -> str:
     Returns:
         str: The dimension labels
     """
-    max_digits = len(str(max_value))
+    max_digits = len(str(max_value - 1))
     int_format = f'{{:0{max_digits}d}}'
     return [f'{dim_prefix}_{int_format.format(i)}' for i in range(max_value)]
 
