@@ -130,9 +130,11 @@ def simulate_spatiotemporal_data(
     s_covs = _get_dim_labels('s_cov', len(spatial_covariates_means))
     t_covs = _get_dim_labels('t_cov', len(temporal_covariates_means))
 
-    spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=pd.Index(s_locs, name='location'))
+    spa_pos_df = pd.DataFrame(
+        spa_pos.cpu(), columns=s_dims, index=pd.Index(s_locs, name='location')
+    )
     temp_pos_df = pd.DataFrame(
-        temp_pos, columns=['time_val'], index=pd.Index(t_points, name='time')
+        temp_pos.cpu(), columns=['time_val'], index=pd.Index(t_points, name='time')
     )
 
     spa_means = TSR.tensor(spatial_covariates_means)
@@ -187,12 +189,12 @@ def simulate_spatiotemporal_data(
         names=['location', 'time'],
     )
     data_df = pd.DataFrame(
-        torch.concat([y_val, covs], dim=1),
+        torch.concat([y_val, covs], dim=1).cpu(),
         columns=['y'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
     beta_df = pd.DataFrame(
-        beta_values.reshape([nb_locations * nb_time_points, nb_covs]),
+        beta_values.reshape([nb_locations * nb_time_points, nb_covs]).cpu(),
         columns=['Intercept'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
