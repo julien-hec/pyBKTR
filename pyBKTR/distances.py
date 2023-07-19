@@ -1,18 +1,6 @@
-from enum import Enum
-
 import torch
 
 from pyBKTR.tensor_ops import TSR
-
-EARTH_RADIUS_KM = 6371.2
-
-
-class DIST_TYPE(Enum):
-    EUCLIDEAN = 'euclidean'
-    HAVERSINE = 'haversine'
-    MANHATTAN = 'manhattan'
-    CHEBYSHEV = 'chebyshev'
-    NONE = 'none'
 
 
 def check_dist_tensor_dimensions(
