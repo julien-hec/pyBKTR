@@ -220,10 +220,10 @@ class ResultLogger:
         self.beta_estimates = self.sum_beta_est / self.nb_sampling_iter
         self.y_estimates = self.sum_y_est / self.nb_sampling_iter
         beta_covariates_summary = self._create_distrib_values_summary(
-            self.beta_estimates.reshape(-1, len(self.feature_labels)).cpu(), dim=0
+            self.beta_estimates.reshape(-1, len(self.feature_labels)), dim=0
         )
         self.beta_covariates_summary_df = pd.DataFrame(
-            beta_covariates_summary.t(),
+            beta_covariates_summary.t().cpu(),
             index=pd.Index(self.feature_labels, name='feature'),
             columns=self.moment_metrics + self.quantile_metrics,
         )
