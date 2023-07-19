@@ -103,7 +103,7 @@ def plot_spatial_betas(
     mapbox_zoom: int = 9,
     use_dark_mode: bool = True,
     show_figure: bool = True,
-    fig_width: int = 850,
+    fig_width: int = 900,
     fig_height: int = 550,
 ):
     """Create a plot of beta values through space for a given temporal point and a set of
@@ -119,7 +119,7 @@ def plot_spatial_betas(
         use_dark_mode (bool, optional): Whether to use dark mode. Defaults to True. Only used if
             is_map is True.
         show_figure (bool, optional): Whether to show the figure. Defaults to True.
-        fig_width (int, optional): Figure width. Defaults to 850.
+        fig_width (int, optional): Figure width. Defaults to 900.
         fig_height (int, optional): Figure height. Defaults to 550.
     """
     if not bktr_reg.has_completed_sampling:
@@ -134,11 +134,13 @@ def plot_spatial_betas(
         var_name='feature', value_vars=plot_feature_labels, ignore_index=False
     ).reset_index()
 
-    feature_titles = [_get_feature_title(s) for s in plot_feature_labels]
+    feature_titles = [s.replace('_', ' ').title() for s in plot_feature_labels]
     min_beta, max_beta = beta_df.min().min(), beta_df.max().max()
     nb_subplots = len(plot_feature_labels)
     nb_rows = math.ceil(nb_subplots / nb_cols)
-    df_coord = bktr_reg.spatial_positions_df.copy()
+    coords_projector = bktr_reg.geo_coords_projector
+    is_map = coords_projector is not None
+    df_coord = coords_projector.ini_df.copy() if is_map else bktr_reg.spatial_positions_df.copy()
     if df_coord.shape[1] != 2:
         raise ValueError('Spatial coordinates must have 2 columns to be plotted.')
     if not is_map:
@@ -421,11 +423,6 @@ def plot_hyperparams_traceplot(
         fig.show()
         return
     return fig
-
-
-def _get_feature_title(feature_name: str) -> str:
-    feature_title = feature_name.replace('_', ' ').title()
-    return f'{feature_title} Beta Values'
 
 
 def _hex_to_rgba(hex: str, transparency: float) -> str:

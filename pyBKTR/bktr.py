@@ -17,6 +17,7 @@ from pyBKTR._samplers import (
     get_cov_decomp_chol,
     sample_norm_multivariate,
 )
+from pyBKTR.distances import GeoMercatorProjector
 from pyBKTR.kernels import Kernel, KernelMatern, KernelSE
 from pyBKTR.tensor_ops import TSR
 
@@ -60,6 +61,7 @@ class BKTRRegressor:
         'spatial_labels',
         'temporal_labels',
         'feature_labels',
+        'geo_coords_projector',
     ]
     data_df: pd.DataFrame
     y: torch.Tensor
@@ -98,6 +100,8 @@ class BKTRRegressor:
     spatial_labels: list
     temporal_labels: list
     feature_labels: list
+    # Geographical coordinates projector
+    geo_coords_projector: GeoMercatorProjector | None
 
     # Constant string needed for dataframe index names
     spatial_index_name = 'location'
@@ -108,15 +112,17 @@ class BKTRRegressor:
         data_df: pd.DataFrame,
         spatial_positions_df: pd.DataFrame,
         temporal_positions_df: pd.DataFrame,
-        rank_decomp: int,
-        burn_in_iter: int,
-        sampling_iter: int,
+        rank_decomp: int = 500,
+        burn_in_iter: int = 500,
+        sampling_iter: int = 10,
         formula: None | str = None,
         spatial_kernel: Kernel = KernelMatern(smoothness_factor=3),
         temporal_kernel: Kernel = KernelSE(),
         sigma_r: float = 1e-2,
         a_0: float = 1e-6,
         b_0: float = 1e-6,
+        has_geo_coords: bool = True,
+        geo_coords_scale: float = 10,
     ):
         """Create a new *BKTRRegressor* object.
 
@@ -135,9 +141,9 @@ class BKTRRegressor:
                 Formulaic package).  If None, the first column of the data frame will be
                 used as the response variable and all the other columns will be used as the
                 covariates.  Defaults to None.
-            rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`)
-            burn_in_iter (int): Number of iteration before sampling (Paper -- :math:`K_1`).
-            sampling_iter (int): Number of sampling iterations (Paper -- :math:`K_2`).
+            rank_decomp (int): Rank of the CP decomposition (Paper -- :math:`R`). Defaults to 10.
+            burn_in_iter (int): Iteration before sampling (Paper -- :math:`K_1`). Defaults to 500.
+            sampling_iter (int): Sampling iteration number (Paper -- :math:`K_2`). Defaults to 500.
             spatial_positions_df (pd.DataFrame): Spatial kernel input
                 tensor used to calculate covariates' distance. Vector of length equal to
                 the number of location points.
@@ -148,12 +154,17 @@ class BKTRRegressor:
                 Defaults to KernelMatern(smoothness_factor=3).
             temporal_kernel (Kernel, optional): Temporal kernel used.
                 Defaults to KernelSE().
-            sigma_r (float, optional): Variance of the white noise process TODO
+            sigma_r (float, optional): Variance of the white noise process
                 (Paper -- :math:`\\tau^{-1}`). Defaults to 1e-2.
             a_0 (float, optional): Initial value for the shape (:math:`\\alpha`) in the gamma
                 function generating tau. Defaults to 1e-6.
             b_0 (float, optional): Initial value for the rate (:math:`\\beta`) in the gamma
                 function generating tau. Defaults to 1e-6.
+            has_geo_coords (bool, optional): Whether the spatial positions df use geographic
+                coordinates (latitude, longitude). Defaults to True.
+            geo_coords_scale (float, optional): Scale factor to convert geographic coordinates to
+                euclidean 2D space via Mercator projection using x & y domains of
+                [-scale/2, +scale/2]. Only used if has_geo_coords is TRUE. Defaults to 10.
         """
         self.has_completed_sampling = False
         self._verify_input_labels(data_df, spatial_positions_df, temporal_positions_df)
@@ -161,9 +172,16 @@ class BKTRRegressor:
         # Sort all df indexes
         for df in [data_df, spatial_positions_df, temporal_positions_df]:
             df.sort_index(inplace=True)
+
         self.data_df = data_df
-        self.spatial_positions_df = spatial_positions_df
         self.temporal_positions_df = temporal_positions_df
+        if has_geo_coords:
+            self.geo_coords_projector = GeoMercatorProjector(
+                spatial_positions_df, geo_coords_scale
+            )
+            self.spatial_positions_df = self.geo_coords_projector.scaled_ini_df
+        else:
+            self.spatial_positions_df = spatial_positions_df
 
         # Set formula and get model's matrix
         y_df, x_df = self._get_x_and_y_dfs_from_formula(data_df, formula)
@@ -197,8 +215,8 @@ class BKTRRegressor:
         # Kernel assignation
         self.spatial_kernel = spatial_kernel
         self.temporal_kernel = temporal_kernel
-        self.spatial_kernel.set_positions(spatial_positions_df)
-        self.temporal_kernel.set_positions(temporal_positions_df)
+        self.spatial_kernel.set_positions(self.spatial_positions_df)
+        self.temporal_kernel.set_positions(self.temporal_positions_df)
         # Create first kernels
         self.spatial_kernel.kernel_gen()
         self.temporal_kernel.kernel_gen()

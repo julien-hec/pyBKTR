@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from formulaic import Formula
 
-from pyBKTR.kernels import Kernel, KernelComposed
+from pyBKTR.kernels import Kernel, KernelAddComposed, KernelMulComposed
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import get_label_index_or_raise
 
@@ -390,7 +390,7 @@ class ResultLogger:
                 the estimated parameters distribution and the fixed parameters.
         """
         params = kernel.parameters
-        if kernel.__class__ == KernelComposed:
+        if kernel.__class__ in [KernelAddComposed, KernelMulComposed]:
             new_ind_nb = indent_count + 1
             kernel_elems = [
                 f'Composed Kernel ({str(kernel.composition_operation.value).capitalize()})',

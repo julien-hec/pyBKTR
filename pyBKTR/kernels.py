@@ -10,7 +10,7 @@ import pandas as pd
 import torch
 from plotly import express as px
 
-from pyBKTR.distances import DIST_TYPE, DistanceCalculator
+from pyBKTR.distances import get_euclidean_dist_tsr
 from pyBKTR.tensor_ops import TSR
 from pyBKTR.utils import log
 
@@ -87,7 +87,8 @@ class Kernel(abc.ABC):
     distance_matrix: torch.Tensor | None
     parameters: list[KernelParameter] = []
     covariance_matrix: torch.Tensor
-    distance_type: type[DIST_TYPE]
+    positions_df: pd.DataFrame | None
+    has_dist_matrix: bool
 
     @property
     @abc.abstractmethod
@@ -98,12 +99,9 @@ class Kernel(abc.ABC):
     def _core_kernel_fn(self) -> torch.Tensor:
         pass
 
-    def __init__(
-        self, kernel_variance: float, distance_type: type[DIST_TYPE], jitter_value: float | None
-    ) -> None:
+    def __init__(self, kernel_variance: float, jitter_value: float | None) -> None:
         self.parameters = []
         self.kernel_variance = kernel_variance
-        self.distance_type = distance_type
         self.jitter_value = jitter_value
 
     def add_jitter_to_kernel(self):
@@ -122,7 +120,8 @@ class Kernel(abc.ABC):
     def set_positions(self, position_df: pd.DataFrame):
         self.positions_df = position_df
         positions_tensor = TSR.tensor(position_df.to_numpy())
-        self.distance_matrix = DistanceCalculator.get_matrix(positions_tensor, self.distance_type)
+        if self.has_dist_matrix:
+            self.distance_matrix = get_euclidean_dist_tsr(positions_tensor)
 
     def plot(self, show_figure: bool = True):
         fig = px.imshow(
@@ -143,17 +142,18 @@ class Kernel(abc.ABC):
             return
         return fig
 
-    def __mul__(self, other) -> KernelComposed:
-        return KernelComposed(self, other, f'({self._name} * {other._name})', CompositionOps.MUL)
+    def __mul__(self, other) -> KernelMulComposed:
+        return KernelMulComposed(self, other, f'({self._name} * {other._name})')
 
-    def __add__(self, other) -> KernelComposed:
-        return KernelComposed(self, other, f'({self._name} + {other._name})', CompositionOps.ADD)
+    def __add__(self, other) -> KernelAddComposed:
+        return KernelAddComposed(self, other, f'({self._name} + {other._name})')
 
 
 class KernelWhiteNoise(Kernel):
     """White Noise Kernel"""
 
     distance_matrix: None
+    has_dist_matrix = False
     _name: str = 'White Noise Kernel'
 
     def __init__(
@@ -161,7 +161,7 @@ class KernelWhiteNoise(Kernel):
         kernel_variance: float = 1,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, DIST_TYPE.NONE, jitter_value)
+        super().__init__(kernel_variance, jitter_value)
 
     def _core_kernel_fn(self) -> torch.Tensor:
         return TSR.eye(len(self.positions_df))
@@ -172,16 +172,16 @@ class KernelSE(Kernel):
 
     lengthscale: KernelParameter
     distance_matrix: torch.Tensor
+    has_dist_matrix = True
     _name: str = 'SE Kernel'
 
     def __init__(
         self,
         lengthscale: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, distance_type, jitter_value)
+        super().__init__(kernel_variance, jitter_value)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self, 'lengthscale')
 
@@ -195,6 +195,7 @@ class KernelRQ(Kernel):
     lengthscale: KernelParameter
     alpha: KernelParameter
     distance_matrix: torch.Tensor
+    has_dist_matrix = True
     _name: str = 'RQ Kernel'
 
     def __init__(
@@ -202,10 +203,9 @@ class KernelRQ(Kernel):
         lengthscale: KernelParameter = KernelParameter(2),
         alpha: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, distance_type, jitter_value)
+        super().__init__(kernel_variance, jitter_value)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self, 'lengthscale')
         self.alpha = alpha
@@ -223,6 +223,7 @@ class KernelPeriodic(Kernel):
     lengthscale: KernelParameter
     period_length: KernelParameter
     distance_matrix: torch.Tensor
+    has_dist_matrix = True
     _name: str = 'Periodic Kernel'
 
     def __init__(
@@ -230,10 +231,9 @@ class KernelPeriodic(Kernel):
         lengthscale: KernelParameter = KernelParameter(2),
         period_length: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.EUCLIDEAN,
         jitter_value: float | None = None,
     ) -> None:
-        super().__init__(kernel_variance, distance_type, jitter_value)
+        super().__init__(kernel_variance, jitter_value)
         self.lengthscale = lengthscale
         self.lengthscale.set_kernel(self, 'lengthscale')
         self.period_length = period_length
@@ -250,6 +250,8 @@ class KernelPeriodic(Kernel):
 class KernelMatern(Kernel):
     lengthscale: KernelParameter
     smoothness_factor: Literal[1, 3, 5]
+    distance_matrix: torch.Tensor
+    has_dist_matrix = True
     _name: str = 'Matern Kernel'
 
     def __init__(
@@ -257,12 +259,11 @@ class KernelMatern(Kernel):
         smoothness_factor: Literal[1, 3, 5],
         lengthscale: KernelParameter = KernelParameter(2),
         kernel_variance: float = 1,
-        distance_type: type[DIST_TYPE] = DIST_TYPE.HAVERSINE,
         jitter_value: float | None = None,
     ) -> None:
         if smoothness_factor not in {1, 3, 5}:
             raise ValueError('smoothness factor should be one of the following values 1, 3 or 5')
-        super().__init__(kernel_variance, distance_type, jitter_value)
+        super().__init__(kernel_variance, jitter_value)
         self._name = f'Matern {smoothness_factor}/2 Kernel'
         self.smoothness_factor = smoothness_factor
         self.lengthscale = lengthscale
@@ -310,6 +311,7 @@ class KernelComposed(Kernel):
     parameters: list = []
     left_kernel = Kernel
     right_kernel = Kernel
+    has_dist_matrix = True
 
     def __init__(
         self,
@@ -319,17 +321,11 @@ class KernelComposed(Kernel):
         composition_operation: CompositionOps,
     ) -> None:
         composed_variance = 1
-        if left_kernel.distance_type != right_kernel.distance_type:
-            raise RuntimeError('Composed kernel must have the same distance type')
         new_jitter_val = max(
             left_kernel.jitter_value or TSR.default_jitter,
             right_kernel.jitter_value or TSR.default_jitter,
         )
-        super().__init__(
-            composed_variance,
-            left_kernel.distance_type,
-            new_jitter_val,
-        )
+        super().__init__(composed_variance, new_jitter_val)
         self.left_kernel = left_kernel
         self.right_kernel = right_kernel
         self._name = new_name
@@ -348,3 +344,17 @@ class KernelComposed(Kernel):
         super().set_positions(positions_df)
         self.left_kernel.set_positions(positions_df)
         self.right_kernel.set_positions(positions_df)
+
+
+class KernelAddComposed(KernelComposed):
+    """Kernel composed of two kernels and created when two kernels are added."""
+
+    def __init__(self, left_kernel: Kernel, right_kernel: Kernel, new_name: str) -> None:
+        super().__init__(left_kernel, right_kernel, new_name, CompositionOps.ADD)
+
+
+class KernelMulComposed(KernelComposed):
+    """Kernel composed of two kernels and created when two kernels are multiplied."""
+
+    def __init__(self, left_kernel: Kernel, right_kernel: Kernel, new_name: str) -> None:
+        super().__init__(left_kernel, right_kernel, new_name, CompositionOps.MUL)

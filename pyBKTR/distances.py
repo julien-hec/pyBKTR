@@ -2,6 +2,8 @@ from enum import Enum
 
 import torch
 
+from pyBKTR.tensor_ops import TSR
+
 EARTH_RADIUS_KM = 6371.2
 
 
@@ -13,74 +15,81 @@ class DIST_TYPE(Enum):
     NONE = 'none'
 
 
-class DistanceCalculator:
-    """
-    Class to compute distances between points of two vectors
-    according to a given distance type.
-
-    :meta private:
-    """
-
-    @classmethod
-    def get_matrix(cls, x: torch.Tensor, distance_type: DIST_TYPE, earth_radius=EARTH_RADIUS_KM):
-        match distance_type:
-            case DIST_TYPE.EUCLIDEAN:
-                return cls.calc_euclidean_dist(x, x)
-            case DIST_TYPE.MANHATTAN:
-                return cls.calc_manhattan_dist(x, x)
-            case DIST_TYPE.CHEBYSHEV:
-                return cls.calc_chebyshev_dist(x, x)
-            case DIST_TYPE.HAVERSINE:
-                return cls.calc_haversine_dist(x, x, earth_radius)
-            case DIST_TYPE.NONE:
-                return None
-
-    @staticmethod
-    def check_tensor_dimensions(
-        x1: torch.Tensor,
-        x2: torch.Tensor,
-        expected_nb_dim: int,
-        expected_last_dim_shape: None | int = None,
+def check_dist_tensor_dimensions(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    expected_nb_dim: int = 2,
+    expected_last_dim_shape: int | None = None,
+):
+    """Check that two tensors have valid dimensions for distance computation."""
+    if not (TSR.is_tensor(x1) and TSR.is_tensor(x2)):
+        raise ValueError('Distance params must be tensors')
+    if not (x1.ndim == x2.ndim and x2.ndim == expected_nb_dim):
+        raise ValueError(f'Distance params should have {expected_nb_dim} dimension(s)')
+    if expected_last_dim_shape is not None and not (
+        expected_last_dim_shape == x1.shape[-1] == x2.shape[-1]
     ):
-        if not isinstance(x1, torch.Tensor) or not isinstance(x2, torch.Tensor):
-            raise ValueError('Distance params must be tensors')
-        if not (x1.ndim == x2.ndim == expected_nb_dim):
-            raise RuntimeError(f'Distance params should have {expected_nb_dim} dimension(s)')
-        if expected_last_dim_shape is not None and not (
-            expected_last_dim_shape == x1.shape[-1] == x2.shape[-1]
-        ):
-            raise RuntimeError(
-                f'Distance params last dimension should contain {expected_last_dim_shape} elements'
-            )
+        raise ValueError(
+            f'Distance params last dimension should contain {expected_last_dim_shape} elements'
+        )
 
-    @classmethod
-    def calc_euclidean_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
-        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        return (xu1 - xu2.transpose(0, 1)).pow(2).sum(2).sqrt()
 
-    @classmethod
-    def calc_haversine_dist(
-        cls, x1: torch.Tensor, x2: torch.Tensor, earth_radius: float = EARTH_RADIUS_KM
-    ):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2, expected_last_dim_shape=2)
-        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        xu1, xu2 = torch.deg2rad(xu1), torch.deg2rad(xu2)
-        xu2 = xu2.transpose(0, 1)
-        dist = (xu1 - xu2).abs()
-        a = (dist[:, :, 0] / 2).sin() ** 2 + xu1[:, :, 0].cos() * xu2[:, :, 0].cos() * (
-            dist[:, :, 1] / 2
-        ).sin() ** 2
-        return earth_radius * 2 * torch.atan2(a.sqrt(), (1 - a).sqrt())
+def get_euclidean_dist_tsr(x: torch.Tensor) -> torch.Tensor:
+    """Function to compute the euclidean distance between a tensor and its transpose."""
+    check_dist_tensor_dimensions(x, x)
+    xu1, xu2 = x.unsqueeze(1), x.unsqueeze(1).transpose(0, 1)
+    return (xu1 - xu2).pow(2).sum(2).sqrt()
 
-    @classmethod
-    def calc_manhattan_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
-        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        return (xu1 - xu2.transpose(0, 1)).abs().sum(2)
 
-    @classmethod
-    def calc_chebyshev_dist(cls, x1: torch.Tensor, x2: torch.Tensor):
-        cls.check_tensor_dimensions(x1, x2, expected_nb_dim=2)
-        xu1, xu2 = x1.unsqueeze(1), x2.unsqueeze(1)
-        return (xu1 - xu2.transpose(0, 1)).abs().max(2)[0]
+class GeoMercatorProjector:
+    """Class to project coordinates with mercator projection on a 2D plane
+    Project coordinates with mercator projection on a 2D plane for
+    a given scale. Keep track of the scale and the center of the projection to
+    be able to project new coordinates which is useful during interpolation.
+    """
+
+    ini_df = None
+    x_mid_point = None
+    y_mid_point = None
+    coords_scale = None
+    scale = None
+    scaled_ini_df = None
+    EARTH_RADIUM_KM = 6371
+
+    def __init__(self, df, scale=10.0):
+        self.ini_df = df
+        km_df = self._km_from_coords_df(df)
+        lon_x = km_df['lon_x']
+        lat_y = km_df['lat_y']
+        x_min, x_max = min(lon_x), max(lon_x)
+        y_max, y_min = max(lat_y), min(lat_y)
+        self.x_mid_point = (x_min + x_max) / 2
+        self.y_mid_point = (y_min + y_max) / 2
+        self.coords_scale = max(x_max - x_min, y_max - y_min)
+        self.scale = scale
+        self.scaled_ini_df = self._scale_and_center_df(km_df)
+
+    def project_new_coords(self, df):
+        km_df = self._km_from_coords_df(df)
+        return self._scale_and_center_df(km_df)
+
+    def _scale_and_center_df(self, df):
+        new_df = df.copy()
+        scaling_factor = self.scale / self.coords_scale
+        new_df['lon_x'] = (new_df['lon_x'] - self.x_mid_point) * scaling_factor
+        new_df['lat_y'] = (new_df['lat_y'] - self.y_mid_point) * scaling_factor
+        return new_df
+
+    def _km_from_coords_df(self, df):
+        if not ('latitude' in df.columns and 'longitude' in df.columns):
+            raise ValueError('Dataframe must have columns "latitude" and "longitude"')
+        new_df = df.copy()
+        lons = TSR.tensor(df['longitude'])
+        lats = TSR.tensor(df['latitude'])
+        x = (self.EARTH_RADIUM_KM / (2 * torch.pi)) * torch.deg2rad(lons)
+        merc_n_y = torch.log(torch.tan(torch.pi / 4 + torch.deg2rad(lats) / 2))
+        y = (self.EARTH_RADIUM_KM / (2 * torch.pi)) * merc_n_y
+        new_df['lon_x'] = x.cpu().numpy()
+        new_df['lat_y'] = y.cpu().numpy()
+        new_df = new_df.drop(columns=['latitude', 'longitude'])
+        return new_df

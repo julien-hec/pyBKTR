@@ -112,6 +112,11 @@ def simulate_spatiotemporal_data(
             - `temporal_positions_df` contains the time points and their coordinates
             - `beta_df` contains the true beta coefficients
     """
+    # Saving last fp_type to restore it at the end of the function
+    # Using float64 to avoid numerical errors in simulation
+    ini_fp_type = TSR.fp_type
+    TSR.set_params(fp_type='float64')
+
     spa_pos = TSR.rand([nb_locations, nb_spatial_dimensions]) * spatial_scale
     temp_pos = TSR.tensor(
         [time_scale / (nb_time_points - 1) * x for x in range(0, nb_time_points)]
@@ -165,7 +170,6 @@ def simulate_spatiotemporal_data(
     chol_spa: torch.Tensor = torch.linalg.cholesky(spatial_covariance)
     chol_temp_covs = torch.linalg.cholesky(
         TSR.kronecker_prod(temporal_covariance, covs_covariance)
-        + 1e-6 * TSR.eye(nb_covs * nb_time_points)
     )
     temp_vals = TSR.randn([nb_locations, nb_time_points * nb_covs])
     temp_errs = TSR.randn([nb_locations, nb_time_points])
@@ -192,6 +196,7 @@ def simulate_spatiotemporal_data(
         columns=['Intercept'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
+    TSR.set_params(fp_type=ini_fp_type)
     return {
         'data_df': data_df,
         'spatial_positions_df': spa_pos_df,
