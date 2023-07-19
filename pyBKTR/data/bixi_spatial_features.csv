@@ -1,4 +1,4 @@
-location,area_park,len_cycle_path,len_major_road,len_minor_road,num_metro_stations,num_other_commercial,num_restuarants,num_university,num_pop,num_bus_stations,num_bus_routes,walkscore,capacity
+location,area_park,len_cycle_path,len_major_road,len_minor_road,num_metro_stations,num_other_commercial,num_restaurants,num_university,num_pop,num_bus_stations,num_bus_routes,walkscore,capacity
 10002 - Métro Charlevoix (Centre / Charlevoix),5640.491839399999,795.43383898,635.020013768,2438.55220072,1,13,4,0,1800.46410928,12.0,5.0,75.0,19.0
 4000 - Jeanne-d'Arc / Ontario,0.0,288.65782682400004,545.357816667,1819.94824757,0,18,10,0,1648.83280337,9.0,4.0,83.0,19.0
 4001 - Graham / Brookfield,0.0,748.061954321,2414.63614212,2215.79783273,0,5,2,0,981.138604926,15.0,6.0,73.0,23.0

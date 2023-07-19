@@ -112,6 +112,11 @@ def simulate_spatiotemporal_data(
             - `temporal_positions_df` contains the time points and their coordinates
             - `beta_df` contains the true beta coefficients
     """
+    # Saving last fp_type to restore it at the end of the function
+    # Using float64 to avoid numerical errors in simulation
+    ini_fp_type = TSR.fp_type
+    TSR.set_params(fp_type='float64')
+
     spa_pos = TSR.rand([nb_locations, nb_spatial_dimensions]) * spatial_scale
     temp_pos = TSR.tensor(
         [time_scale / (nb_time_points - 1) * x for x in range(0, nb_time_points)]
@@ -126,7 +131,9 @@ def simulate_spatiotemporal_data(
     t_covs = _get_dim_labels('t_cov', len(temporal_covariates_means))
 
     spa_pos_df = pd.DataFrame(spa_pos, columns=s_dims, index=pd.Index(s_locs, name='location'))
-    temp_pos_df = pd.DataFrame(temp_pos, columns=['time'], index=pd.Index(t_points, name='time'))
+    temp_pos_df = pd.DataFrame(
+        temp_pos, columns=['time_val'], index=pd.Index(t_points, name='time')
+    )
 
     spa_means = TSR.tensor(spatial_covariates_means)
     nb_spa_covariates = len(spa_means)
@@ -164,11 +171,13 @@ def simulate_spatiotemporal_data(
     chol_temp_covs = torch.linalg.cholesky(
         TSR.kronecker_prod(temporal_covariance, covs_covariance)
     )
-    beta_values = (
-        chol_spa @ TSR.randn([nb_locations, nb_time_points * nb_covs]) @ chol_temp_covs.T
-    ).reshape([nb_locations, nb_time_points, nb_covs])
+    temp_vals = TSR.randn([nb_locations, nb_time_points * nb_covs])
+    temp_errs = TSR.randn([nb_locations, nb_time_points])
+    beta_values = (chol_spa @ temp_vals @ chol_temp_covs.T).reshape(
+        [nb_locations, nb_time_points, nb_covs]
+    )
     y_val = torch.einsum('ijk,ijk->ij', covs, beta_values)
-    err = TSR.randn([nb_locations, nb_time_points]) * (noise_variance_scale**0.5)
+    err = temp_errs * (noise_variance_scale**0.5)
     y_val += err
     y_val = y_val.reshape([nb_locations * nb_time_points, 1])
     # We remove the intercept from the covariates
@@ -187,6 +196,7 @@ def simulate_spatiotemporal_data(
         columns=['Intercept'] + s_covs + t_covs,
         index=spa_temp_df_index,
     )
+    TSR.set_params(fp_type=ini_fp_type)
     return {
         'data_df': data_df,
         'spatial_positions_df': spa_pos_df,
@@ -206,7 +216,7 @@ def _get_dim_labels(dim_prefix: str, max_value: int) -> str:
     Returns:
         str: The dimension labels
     """
-    max_digits = len(str(max_value))
+    max_digits = len(str(max_value - 1))
     int_format = f'{{:0{max_digits}d}}'
     return [f'{dim_prefix}_{int_format.format(i)}' for i in range(max_value)]
 
