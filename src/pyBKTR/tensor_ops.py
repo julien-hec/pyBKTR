@@ -84,7 +84,8 @@ class TSR:
 
     @classmethod
     def rand_choice(cls, choices_tsr: torch.Tensor, nb_sample: int, use_replace: bool = False):
-        return torch.multinomial(choices_tsr, nb_sample, replacement=use_replace)
+        choices_indx = torch.multinomial(choices_tsr, nb_sample, replacement=use_replace)
+        return choices_tsr[choices_indx]
 
     @staticmethod
     def kronecker_prod(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:

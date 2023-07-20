@@ -253,7 +253,7 @@ class BKTRRegressor:
         new_data_df: pd.DataFrame,
         new_spatial_positions_df: pd.DataFrame | None = None,
         new_temporal_positions_df: pd.DataFrame | None = None,
-        jitter=None,
+        jitter=1e-5,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Predict the beta coefficients and response values for new data.
 
@@ -267,6 +267,8 @@ class BKTRRegressor:
                 If None, there should be no new spatial covariates. Defaults to None.
             new_temporal_positions_df (pd.DataFrame | None, optional): New temporal coordinates.
                 If None, there should be no new temporal covariates. Defaults to None.
+            jitter (float, optional): Jitter value to add to the diagonal of the precision matrix.
+                Defaults to 1e-5.
 
         Returns:
             tuple[pd.DataFrame, pd.DataFrame]: A tuple of two dataframes. The first
@@ -274,6 +276,9 @@ class BKTRRegressor:
             The second represents the forecasted response for all new spatial locations or
             temporal points.
         """
+        ini_fp_type = TSR.fp_type
+        TSR.set_params(fp_type='float64')
+
         self._pred_valid_and_sort_data(
             new_data_df, new_spatial_positions_df, new_temporal_positions_df
         )
@@ -289,12 +294,12 @@ class BKTRRegressor:
             else self.temporal_positions_df
         )
         data_df = pd.concat([self.data_df, new_data_df], axis=0)
-        data_df_index = list(
+        data_df_index_tups = list(
             itertools.product(
                 spatial_positions_df.index.to_list(), temporal_positions_df.index.to_list()
             )
         )
-        data_df = data_df.loc[data_df_index, :]
+        data_df = data_df.loc[data_df_index_tups, :]
         self._verify_input_labels(
             data_df,
             spatial_positions_df=spatial_positions_df,
@@ -326,6 +331,7 @@ class BKTRRegressor:
             [len(spatial_positions_df), len(temporal_positions_df), -1]
         )
         new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
+        data_df_index = pd.MultiIndex.from_tuples(data_df_index_tups, names=['location', 'time'])
         new_beta_df = pd.DataFrame(
             new_betas.flatten(0, 1),
             index=data_df_index,
@@ -336,6 +342,17 @@ class BKTRRegressor:
             index=data_df_index,
             columns=['y'],
         )
+        new_locs = new_spatial_positions_df.index.get_level_values(0).unique()
+        new_times = new_temporal_positions_df.index.get_level_values(0).unique()
+        new_beta_df = new_beta_df[
+            (new_beta_df.index.get_level_values(0).isin(new_locs))
+            | (new_beta_df.index.get_level_values(1).isin(new_times))
+        ]
+        new_y_df = new_y_df[
+            (new_y_df.index.get_level_values(0).isin(new_locs))
+            | (new_y_df.index.get_level_values(1).isin(new_times))
+        ]
+        TSR.set_params(fp_type=ini_fp_type)
         return new_y_df, new_beta_df
 
     @property
@@ -780,7 +797,7 @@ class BKTRRegressor:
         new_decomp_cov = new_cov - (new_old_cov @ old_cov.inverse() @ old_new_cov)
         new_decomp_cov = (new_decomp_cov + new_decomp_cov.T) / 2
         if jitter is not None:
-            new_decomp_cov += jitter * torch.eye(new_decomp_cov.shape[0])
+            new_decomp_cov += jitter * TSR.eye(new_decomp_cov.shape[0])
         new_decomp = (
             torch.distributions.MultivariateNormal(new_decomp_mus.T, new_decomp_cov).sample().T
         )
