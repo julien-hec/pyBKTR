@@ -333,12 +333,12 @@ class BKTRRegressor:
         new_y_est = torch.einsum('ijk,ijk->ij', [new_betas, covariates])
         data_df_index = pd.MultiIndex.from_tuples(data_df_index_tups, names=['location', 'time'])
         new_beta_df = pd.DataFrame(
-            new_betas.flatten(0, 1),
+            new_betas.flatten(0, 1).cpu().numpy(),
             index=data_df_index,
             columns=x_df.columns,
         )
         new_y_df = pd.DataFrame(
-            new_y_est.flatten(),
+            new_y_est.flatten().cpu().numpy(),
             index=data_df_index,
             columns=['y'],
         )
