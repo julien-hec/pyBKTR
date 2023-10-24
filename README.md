@@ -95,6 +95,6 @@ python3 -m build
 Then upload to PyPI
 ```bash
 python3 -m pip install --upgrade twine
-python3 -m upload dist/*
+twine upload dist/*
 ```
 Using the proper credentials, the package should be uploaded to PyPI and be available for download.
