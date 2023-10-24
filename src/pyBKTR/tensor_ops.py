@@ -83,8 +83,18 @@ class TSR:
         return torch.arange(start, end, step, dtype=cls._dtype, device=cls._device)
 
     @classmethod
-    def rand_choice(cls, choices_tsr: torch.Tensor, nb_sample: int, use_replace: bool = False):
-        choices_indx = torch.multinomial(choices_tsr, nb_sample, replacement=use_replace)
+    def rand_choice(
+        cls,
+        choices_tsr: torch.Tensor,
+        nb_sample: int,
+        use_replace: bool = False,
+        weights_tsr: torch.Tensor | None = None,
+    ):
+        weights = cls.ones(choices_tsr.shape) if weights_tsr is None else weights_tsr
+        if weights.shape != choices_tsr.shape:
+            raise ValueError('Weights tensor must have the same shape as choices tensor')
+
+        choices_indx = torch.multinomial(weights_tsr, nb_sample, replacement=use_replace)
         return choices_tsr[choices_indx]
 
     @staticmethod

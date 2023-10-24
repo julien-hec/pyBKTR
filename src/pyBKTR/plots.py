@@ -91,6 +91,7 @@ def plot_temporal_betas(
     )
     if show_figure:
         fig.show()
+        return
     return fig
 
 
@@ -419,6 +420,57 @@ def plot_hyperparams_traceplot(
             'xanchor': 'right',
         },
     )
+    if show_figure:
+        fig.show()
+        return
+    return fig
+
+
+def plot_y_estimates(
+    bktr_reg: BKTRRegressor,
+    show_figure: bool = True,
+    fig_width: int = 600,
+    fig_height: int = 600,
+    fig_title: str | None = 'y estimates vs observed y values',
+):
+    """Plot y estimates vs observed y values.
+
+    Args:
+        bktr_reg (BKTRRegressor): BKTRRegressor object.
+        show_figure (bool, optional): Whether to show the figure. Defaults to True.
+        fig_width (int, optional): Figure width. Defaults to 600.
+        fig_height (int, optional): Figure height. Defaults to 600.
+        fig_title (str, optional): Figure title if provided. Defaults to
+            'y estimates vs observed y values'.
+    """
+    if not bktr_reg.has_completed_sampling:
+        raise RuntimeError('Plots can only be accessed after MCMC sampling.')
+    omega_list = (bktr_reg.omega.flatten().cpu() != 0).numpy().tolist()
+    y_est_np = bktr_reg.y_estimates[omega_list].squeeze().to_numpy()
+    y_np = bktr_reg.y.flatten().cpu()[omega_list].numpy()
+    min_y, max_y = y_np.min(), y_np.max()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=y_np, y=y_est_np, mode='markers'))
+    fig.add_shape(
+        type='line',
+        x0=min_y,
+        y0=min_y,
+        x1=max_y,
+        y1=max_y,
+        line=dict(
+            color='black',
+            width=4,
+            dash='dashdot',
+        ),
+    )
+    fig.update_layout(
+        width=fig_width,
+        height=fig_height,
+        xaxis_title='Observed y',
+        yaxis_title='Estimated y',
+    )
+    if fig_title:
+        fig.update_layout(title=fig_title)
     if show_figure:
         fig.show()
         return
