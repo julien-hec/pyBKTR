@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyBKTR"
-version = "0.1.2"
+version = "0.1.3"
 description = "Python implementation of the Scalable Spatiotemporally Varying Coefficient Modelling with Bayesian Kernelized Tensor Regression"
 readme = "README.md"
 authors = [

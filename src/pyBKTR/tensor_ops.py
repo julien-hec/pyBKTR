@@ -94,7 +94,7 @@ class TSR:
         if weights.shape != choices_tsr.shape:
             raise ValueError('Weights tensor must have the same shape as choices tensor')
 
-        choices_indx = torch.multinomial(weights_tsr, nb_sample, replacement=use_replace)
+        choices_indx = torch.multinomial(weights, nb_sample, replacement=use_replace)
         return choices_tsr[choices_indx]
 
     @staticmethod
