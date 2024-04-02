@@ -29,18 +29,19 @@ pip install git+https://github.com/julien-hec/pyBKTR.git
 ## Simple Example
 To verify that everything is running smooth you can try to run a BKTR regression on the BIXI data presented in the package. (The data is already preloaded in the package in the `BixiData` class)
 
-The following code will run a BKTR regression using sensible defaults on the BIXI data and print a summary of the results.
+The following code will run a BKTR regression using sensible defaults on the BIXI data and print a summary of the results. To use a subset of the BIXI dataset as a simple example, we can also use the `is_light` argument during the `BixiData` initialization  to only load a subset of the data (25 stations and 50 days).
+
 ```python
 from pyBKTR.bktr import BKTRRegressor
 from pyBKTR.examples.bixi import BixiData
 
-bixi_data = BixiData()
+bixi_data = BixiData(is_light=True)
 bktr_regressor = BKTRRegressor(
     data_df=bixi_data.data_df,
     spatial_positions_df=bixi_data.spatial_positions_df,
     temporal_positions_df=bixi_data.temporal_positions_df,
-    burn_in_iter=5,
-    sampling_iter=10
+    burn_in_iter=200,
+    sampling_iter=200
 )
 bktr_regressor.mcmc_sampling()
 print(bktr_regressor.summary)
