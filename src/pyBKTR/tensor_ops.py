@@ -32,6 +32,19 @@ class TSR:
         fp_device: str | None = None,
         seed: int | None = None,
     ):
+        """Set the parameters for the tensor operations.
+
+        Args:
+            fp_type (str | None, optional): The floating point type to be used in the tensors
+                (either `float32` or `float64`) if None, it is not set. Defaults to None.
+            fp_device (str | None, optional): The device to be used in the tensors by torch
+                (e.g., `cpu`, `cuda`, etc.) if None, it is not set. Defaults to None.
+            seed (int | None, optional): The seed to be used in the random number generation
+                for the appropriate device, if None, it is not set. Defaults to None.
+
+        Raises:
+            ValueError: If the `fp_type` is not `float32` or `float64`.
+        """
         if fp_type is not None:
             match fp_type:
                 case 'float32':
