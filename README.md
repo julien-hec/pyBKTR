@@ -28,8 +28,8 @@ pip install git+https://github.com/julien-hec/pyBKTR.git
 
 ### Notes
 If you obtain an error message when installing the package, it may be due to the installation of the `torch` package.
-The `torch` package is a dependency of the `pyBKTR` package and there is a good chance that the error comes from the installation of `torch`.
-Because of its ability to perform tensor operations on the GPU, it can sometimes be more complicated to install than other R packages.
+The `torch` package is a dependency for the `pyBKTR` package and there is a good chance that it could be responsible for encountered installation errors.
+Because of its ability to perform tensor operations on the GPU, it can sometimes be more complicated to install than other Python packages.
 Some of the most common problems are related to the CUDA version, the GPU driver version, that can be incompatible with a specific version of `torch`.
 We provide some guidance for the installation of `torch` below.
 
