@@ -72,8 +72,8 @@ class GeoMercatorProjector:
         if not ('latitude' in df.columns and 'longitude' in df.columns):
             raise ValueError('Dataframe must have columns "latitude" and "longitude"')
         new_df = df.copy()
-        lons = TSR.tensor(df['longitude'])
-        lats = TSR.tensor(df['latitude'])
+        lons = TSR.tensor(df['longitude'].values)
+        lats = TSR.tensor(df['latitude'].values)
         x = (self.EARTH_RADIUM_KM / (2 * torch.pi)) * torch.deg2rad(lons)
         merc_n_y = torch.log(torch.tan(torch.pi / 4 + torch.deg2rad(lats) / 2))
         y = (self.EARTH_RADIUM_KM / (2 * torch.pi)) * merc_n_y
